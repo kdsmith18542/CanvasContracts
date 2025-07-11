@@ -13,7 +13,10 @@ pub mod debugger;
 pub mod marketplace;
 pub mod sdk;
 pub mod community;
+pub mod deployment;
 pub mod error;
+pub mod monitoring;
+pub mod optimization;
 pub mod types;
 pub mod config;
 
@@ -28,6 +31,9 @@ pub use wasm::WasmRuntime;
 pub use baals::BaalsClient;
 pub use ai::AiAssistant;
 pub use debugger::{DebugSession, DebuggerUtils, DebugConfig};
+pub use monitoring::{MetricsCollector, HealthChecker, CircuitBreaker};
+pub use optimization::{PerformanceOptimizer, ResourceUsageAnalyzer};
+pub use deployment::{DeploymentManager, BlueGreenDeploymentManager, CanaryDeploymentManager};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
