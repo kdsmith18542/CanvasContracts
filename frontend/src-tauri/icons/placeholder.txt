@@ -1,0 +1,10 @@
+This directory should contain the following icon files:
+- 32x32.png
+- 128x128.png  
+- 128x128@2x.png
+- icon.icns (macOS)
+- icon.ico (Windows)
+
+For now, you can use any placeholder icons or generate them using tools like:
+- https://www.favicon-generator.org/
+- https://www.electron.build/icons 

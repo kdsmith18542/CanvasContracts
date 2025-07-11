@@ -28,6 +28,35 @@ pub type BlockNumber = u64;
 /// Timestamp
 pub type Timestamp = u64;
 
+/// Node type enum
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum NodeType {
+    Logic,
+    State,
+    Arithmetic,
+    Cryptographic,
+    External,
+    Control,
+    Time,
+    Custom,
+}
+
+/// Graph structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Graph {
+    pub nodes: Vec<NodeId>,
+    pub edges: Vec<(NodeId, NodeId)>,
+}
+
+impl Graph {
+    pub fn new() -> Self {
+        Self {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        }
+    }
+}
+
 /// Value types that can flow through connections
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ValueType {

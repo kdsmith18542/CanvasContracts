@@ -12,14 +12,14 @@ Canvas Contracts is a visual smart contract development platform that allows dev
 - **Local Simulation**: Built-in sandbox for testing contracts before deployment
 - **BaaLS Integration**: Seamless integration with the BaaLS blockchain engine
 - **Real-time Validation**: AI-powered suggestions and security checks
-- **Cross-Platform**: Desktop application built with Electron/Tauri
+- **Cross-Platform**: Desktop application built with Tauri
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - **Rust** (latest stable)
-- **Node.js** (v22+)
+- **Node.js** (v18+)
 - **wasm-pack** for WASM compilation
 - **wasmtime** for local execution
 
@@ -31,31 +31,26 @@ Canvas Contracts is a visual smart contract development platform that allows dev
    cd CanvasContracts
    ```
 
-2. **Install Rust dependencies**
+2. **Install all dependencies**
    ```bash
-   cargo build
+   make install
    ```
 
-3. **Install Node.js dependencies**
+3. **Build the application**
    ```bash
-   npm install
+   make build-app
    ```
 
-4. **Build the application**
+4. **Start the development server**
    ```bash
-   npm run build
-   ```
-
-5. **Start the development server**
-   ```bash
-   npm run dev
+   make run-app
    ```
 
 ## 🏗️ Architecture
 
 Canvas Contracts consists of several key components:
 
-### Frontend (React + Electron/Tauri)
+### Frontend (React + Tauri)
 - **Visual Editor**: Drag-and-drop interface for building contracts
 - **Node Palette**: Library of pre-built contract components
 - **Property Panel**: Configuration interface for nodes
@@ -85,10 +80,10 @@ Canvas Contracts consists of several key components:
 ### Run Tests
 ```bash
 # Rust tests
-cargo test
+make test
 
 # Frontend tests
-npm test
+cd frontend && npm test
 
 # Integration tests
 npm run test:integration
@@ -97,15 +92,41 @@ npm run test:integration
 ### Code Quality
 ```bash
 # Format code
-cargo fmt
-npm run format
+make fmt
 
 # Lint code
-cargo clippy
-npm run lint
+make lint
 ```
 
 ## 🔧 Development
+
+### Development Environment
+
+- **Rust toolchain**: See `rust-toolchain.toml` (run `rustup show` to check)
+- **VSCode**: Recommended (see `.vscode/extensions.json`)
+- **.env**: Copy `.env.example` to `.env` and fill in values as needed
+
+### Development Commands
+
+#### Backend (Rust)
+- `make build` - Build the entire workspace
+- `make test` - Run all tests
+- `make lint` - Run clippy linter
+- `make fmt` - Format code with rustfmt
+- `make clean` - Clean build artifacts
+- `make run` - Run CLI only
+
+#### Frontend (React + Tauri)
+- `make frontend-install` - Install frontend dependencies
+- `make frontend-dev` - Start frontend development server
+- `make frontend-build` - Build frontend
+- `make tauri-dev` - Start Tauri development
+- `make tauri-build` - Build Tauri application
+
+#### Full Application
+- `make install` - Install all dependencies
+- `make build-app` - Build full application
+- `make run-app` - Run full Tauri application
 
 ### Project Structure
 ```
@@ -191,9 +212,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🔗 Links
 
 - **Website**: [canvascontracts.com](https://canvascontracts.com)
-- **Documentation**: [docs.canvascontracts.com](https://docs.canvascontracts.com)
-- **BaaLS Project**: [github.com/baals-project](https://github.com/baals-project)
-
----
-
-**Canvas Contracts** - Making smart contract development accessible to everyone. 
+- **Documentation**: [docs.canvascontracts.com](https://docs.canvascontracts.com) 

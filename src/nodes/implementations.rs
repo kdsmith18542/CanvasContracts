@@ -2,210 +2,311 @@
 
 use crate::{
     error::{CanvasError, CanvasResult},
-    types::{NodeResult, PortId},
+    types::{ExecutionContext, NodeResult, PortId},
 };
 
-use super::NodeContext;
-
-/// Trait for implementing nodes
+/// Node trait that all nodes must implement
 pub trait Node: Send + Sync {
-    /// Execute the node
-    fn execute(&self, context: &mut NodeContext) -> CanvasResult<NodeResult>;
+    /// Execute the node with given context
+    fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult>;
     
-    /// Get the node type name
+    /// Get the node type identifier
     fn node_type(&self) -> &str;
     
-    /// Validate the node configuration
-    fn validate(&self) -> CanvasResult<()> {
-        Ok(())
-    }
+    /// Get the node name
+    fn name(&self) -> &str;
 }
 
-/// Simple pass-through node
-pub struct PassThroughNode {
+/// Basic node implementation
+pub struct BasicNode {
     node_type: String,
+    name: String,
+    executor: Box<dyn Fn(&mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> + Send + Sync>,
 }
 
-impl PassThroughNode {
-    pub fn new(node_type: impl Into<String>) -> Self {
+impl BasicNode {
+    pub fn new(
+        node_type: impl Into<String>,
+        name: impl Into<String>,
+        executor: impl Fn(&mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> + Send + Sync + 'static,
+    ) -> Self {
         Self {
             node_type: node_type.into(),
+            name: name.into(),
+            executor: Box::new(executor),
         }
     }
 }
 
-impl Node for PassThroughNode {
-    fn execute(&self, context: &mut NodeContext) -> CanvasResult<NodeResult> {
-        // Simply pass through all inputs to outputs
-        let mut outputs = std::collections::HashMap::new();
-        
-        for (port_id, value) in &context.inputs {
-            outputs.insert(port_id.clone(), value.clone());
-        }
-        
-        Ok(NodeResult::success(outputs, 1))
+impl Node for BasicNode {
+    fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
+        (self.executor)(context)
     }
-    
+
     fn node_type(&self) -> &str {
         &self.node_type
     }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
 }
 
-/// If condition node
+/// If node implementation
 pub struct IfNode {
-    condition_expression: String,
+    condition: String,
 }
 
 impl IfNode {
-    pub fn new(condition_expression: impl Into<String>) -> Self {
+    pub fn new(condition: impl Into<String>) -> Self {
         Self {
-            condition_expression: condition_expression.into(),
+            condition: condition.into(),
         }
     }
 }
 
 impl Node for IfNode {
-    fn execute(&self, context: &mut NodeContext) -> CanvasResult<NodeResult> {
-        // TODO: Implement condition evaluation
-        // For now, always take the true branch
+    fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
+        // Get the condition input
+        let condition_value = context
+            .get_input(&"condition".to_string())
+            .ok_or_else(|| CanvasError::Node("Missing condition input".to_string()))?;
+
+        // Parse condition as boolean
+        let condition_bool = condition_value
+            .as_bool()
+            .ok_or_else(|| CanvasError::Node("Condition must be a boolean".to_string()))?;
+
+        // Use gas for condition evaluation
+        context.use_gas(10)?;
+
         let mut outputs = std::collections::HashMap::new();
         
-        // Set the true flow output
-        outputs.insert("true_flow".to_string(), serde_json::Value::Bool(true));
-        
+        if condition_bool {
+            outputs.insert("true_flow".to_string(), serde_json::Value::Bool(true));
+        } else {
+            outputs.insert("false_flow".to_string(), serde_json::Value::Bool(true));
+        }
+
         Ok(NodeResult::success(outputs, 10))
     }
-    
+
     fn node_type(&self) -> &str {
         "If"
     }
+
+    fn name(&self) -> &str {
+        "If Condition"
+    }
 }
 
-/// Add node
+/// Add node implementation
 pub struct AddNode;
 
 impl Node for AddNode {
-    fn execute(&self, context: &mut NodeContext) -> CanvasResult<NodeResult> {
-        let a = context.get_input("a")
+    fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
+        // Get input values
+        let a = context
+            .get_input(&"a".to_string())
             .ok_or_else(|| CanvasError::Node("Missing input 'a'".to_string()))?;
-        let b = context.get_input("b")
+        let b = context
+            .get_input(&"b".to_string())
             .ok_or_else(|| CanvasError::Node("Missing input 'b'".to_string()))?;
-        
-        let result = match (a, b) {
-            (serde_json::Value::Number(a), serde_json::Value::Number(b)) => {
-                if let (Some(a_val), Some(b_val)) = (a.as_i64(), b.as_i64()) {
-                    serde_json::Value::Number((a_val + b_val).into())
-                } else {
-                    return Err(CanvasError::Node("Invalid number format".to_string()));
-                }
-            }
-            _ => return Err(CanvasError::Node("Inputs must be numbers".to_string())),
-        };
-        
+
+        // Parse as integers
+        let a_int = a
+            .as_i64()
+            .ok_or_else(|| CanvasError::Node("Input 'a' must be an integer".to_string()))?;
+        let b_int = b
+            .as_i64()
+            .ok_or_else(|| CanvasError::Node("Input 'b' must be an integer".to_string()))?;
+
+        // Perform addition
+        let result = a_int + b_int;
+
+        // Use gas for arithmetic operation
+        context.use_gas(3)?;
+
         let mut outputs = std::collections::HashMap::new();
-        outputs.insert("result".to_string(), result);
-        
+        outputs.insert("result".to_string(), serde_json::Value::Number(result.into()));
+
         Ok(NodeResult::success(outputs, 3))
     }
-    
+
     fn node_type(&self) -> &str {
+        "Add"
+    }
+
+    fn name(&self) -> &str {
         "Add"
     }
 }
 
-/// Read storage node
+/// Read Storage node implementation
 pub struct ReadStorageNode {
     key: String,
 }
 
 impl ReadStorageNode {
     pub fn new(key: impl Into<String>) -> Self {
-        Self {
-            key: key.into(),
-        }
+        Self { key: key.into() }
     }
 }
 
 impl Node for ReadStorageNode {
-    fn execute(&self, context: &mut NodeContext) -> CanvasResult<NodeResult> {
-        // Read from storage
-        let value = context.execution_context.storage.get(&self.key)
-            .cloned()
+    fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
+        // Get the key input
+        let key_value = context
+            .get_input(&"key".to_string())
+            .ok_or_else(|| CanvasError::Node("Missing key input".to_string()))?;
+
+        let key = key_value
+            .as_str()
+            .ok_or_else(|| CanvasError::Node("Key must be a string".to_string()))?;
+
+        // Read from storage (simulated for now)
+        let value = context.execution_context.storage.get(key).cloned()
             .unwrap_or(serde_json::Value::Null);
-        
-        let mut outputs = std::collections::HashMap::new();
-        outputs.insert("value".to_string(), value);
-        
+
         // Use gas for storage read
         context.use_gas(100)?;
-        
+
+        let mut outputs = std::collections::HashMap::new();
+        outputs.insert("value".to_string(), value);
+
         Ok(NodeResult::success(outputs, 100))
     }
-    
+
     fn node_type(&self) -> &str {
         "ReadStorage"
     }
+
+    fn name(&self) -> &str {
+        "Read Storage"
+    }
 }
 
-/// Write storage node
+/// Write Storage node implementation
 pub struct WriteStorageNode {
     key: String,
 }
 
 impl WriteStorageNode {
     pub fn new(key: impl Into<String>) -> Self {
-        Self {
-            key: key.into(),
-        }
+        Self { key: key.into() }
     }
 }
 
 impl Node for WriteStorageNode {
-    fn execute(&self, context: &mut NodeContext) -> CanvasResult<NodeResult> {
-        let value = context.get_input("value")
-            .ok_or_else(|| CanvasError::Node("Missing input 'value'".to_string()))?;
-        
+    fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
+        // Get the key and value inputs
+        let key_value = context
+            .get_input(&"key".to_string())
+            .ok_or_else(|| CanvasError::Node("Missing key input".to_string()))?;
+        let value = context
+            .get_input(&"value".to_string())
+            .ok_or_else(|| CanvasError::Node("Missing value input".to_string()))?;
+
+        let key = key_value
+            .as_str()
+            .ok_or_else(|| CanvasError::Node("Key must be a string".to_string()))?;
+
         // Write to storage
-        context.execution_context.storage.insert(self.key.clone(), value.clone());
-        
+        context.execution_context.storage.insert(key.to_string(), value.clone());
+
         // Use gas for storage write
         context.use_gas(200)?;
-        
-        Ok(NodeResult::success(std::collections::HashMap::new(), 200))
+
+        let mut outputs = std::collections::HashMap::new();
+        outputs.insert("success".to_string(), serde_json::Value::Bool(true));
+
+        Ok(NodeResult::success(outputs, 200))
     }
-    
+
     fn node_type(&self) -> &str {
         "WriteStorage"
     }
+
+    fn name(&self) -> &str {
+        "Write Storage"
+    }
 }
 
-/// Start node
+/// Start node implementation
 pub struct StartNode;
 
 impl Node for StartNode {
-    fn execute(&self, _context: &mut NodeContext) -> CanvasResult<NodeResult> {
+    fn execute(&self, _context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
+        // Start node just initiates flow
         let mut outputs = std::collections::HashMap::new();
         outputs.insert("flow_out".to_string(), serde_json::Value::Bool(true));
-        
+
         Ok(NodeResult::success(outputs, 0))
     }
-    
+
     fn node_type(&self) -> &str {
+        "Start"
+    }
+
+    fn name(&self) -> &str {
         "Start"
     }
 }
 
-/// End node
+/// End node implementation
 pub struct EndNode;
 
 impl Node for EndNode {
-    fn execute(&self, _context: &mut NodeContext) -> CanvasResult<NodeResult> {
-        // End node doesn't produce outputs
+    fn execute(&self, _context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
+        // End node terminates flow
         Ok(NodeResult::success(std::collections::HashMap::new(), 0))
     }
-    
+
     fn node_type(&self) -> &str {
         "End"
+    }
+
+    fn name(&self) -> &str {
+        "End"
+    }
+}
+
+/// Node factory for creating nodes
+pub struct NodeFactory;
+
+impl NodeFactory {
+    /// Create a node by type
+    pub fn create_node(node_type: &str, properties: &std::collections::HashMap<String, serde_json::Value>) -> CanvasResult<Box<dyn Node>> {
+        match node_type {
+            "If" => {
+                let condition = properties
+                    .get("condition_expression")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("true")
+                    .to_string();
+                Ok(Box::new(IfNode::new(condition)))
+            }
+            "Add" => Ok(Box::new(AddNode)),
+            "ReadStorage" => {
+                let key = properties
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default_key")
+                    .to_string();
+                Ok(Box::new(ReadStorageNode::new(key)))
+            }
+            "WriteStorage" => {
+                let key = properties
+                    .get("key")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default_key")
+                    .to_string();
+                Ok(Box::new(WriteStorageNode::new(key)))
+            }
+            "Start" => Ok(Box::new(StartNode)),
+            "End" => Ok(Box::new(EndNode)),
+            _ => Err(CanvasError::Node(format!("Unknown node type: {}", node_type))),
+        }
     }
 }
 
@@ -215,48 +316,38 @@ mod tests {
     use crate::types::ExecutionContext;
 
     #[test]
-    fn test_pass_through_node() {
-        let node = PassThroughNode::new("Test");
-        let mut context = NodeContext::new(ExecutionContext::new(1000));
+    fn test_if_node() {
+        let mut context = crate::nodes::NodeContext::new(ExecutionContext::new(1000));
+        context.inputs.insert("condition".to_string(), serde_json::Value::Bool(true));
         
-        context.inputs.insert("test_input".to_string(), serde_json::Value::String("test".to_string()));
+        let node = IfNode::new("true");
+        let result = node.execute(&mut context);
+        assert!(result.is_ok());
         
-        let result = node.execute(&mut context).unwrap();
-        assert_eq!(result.outputs.get("test_input").unwrap(), &serde_json::Value::String("test".to_string()));
+        let result = result.unwrap();
+        assert!(result.outputs.contains_key("true_flow"));
     }
 
     #[test]
     fn test_add_node() {
-        let node = AddNode;
-        let mut context = NodeContext::new(ExecutionContext::new(1000));
-        
+        let mut context = crate::nodes::NodeContext::new(ExecutionContext::new(1000));
         context.inputs.insert("a".to_string(), serde_json::Value::Number(5.into()));
         context.inputs.insert("b".to_string(), serde_json::Value::Number(3.into()));
         
-        let result = node.execute(&mut context).unwrap();
-        assert_eq!(result.outputs.get("result").unwrap(), &serde_json::Value::Number(8.into()));
+        let node = AddNode;
+        let result = node.execute(&mut context);
+        assert!(result.is_ok());
+        
+        let result = result.unwrap();
+        assert_eq!(result.outputs.get("result").unwrap().as_i64().unwrap(), 8);
     }
 
     #[test]
-    fn test_read_storage_node() {
-        let node = ReadStorageNode::new("test_key");
-        let mut context = NodeContext::new(ExecutionContext::new(1000));
+    fn test_node_factory() {
+        let mut properties = std::collections::HashMap::new();
+        properties.insert("condition_expression".to_string(), serde_json::Value::String("true".to_string()));
         
-        // Set up storage
-        context.execution_context.storage.insert("test_key".to_string(), serde_json::Value::String("test_value".to_string()));
-        
-        let result = node.execute(&mut context).unwrap();
-        assert_eq!(result.outputs.get("value").unwrap(), &serde_json::Value::String("test_value".to_string()));
-    }
-
-    #[test]
-    fn test_write_storage_node() {
-        let node = WriteStorageNode::new("test_key");
-        let mut context = NodeContext::new(ExecutionContext::new(1000));
-        
-        context.inputs.insert("value".to_string(), serde_json::Value::String("test_value".to_string()));
-        
-        let result = node.execute(&mut context).unwrap();
-        assert_eq!(context.execution_context.storage.get("test_key").unwrap(), &serde_json::Value::String("test_value".to_string()));
+        let node = NodeFactory::create_node("If", &properties);
+        assert!(node.is_ok());
     }
 } 

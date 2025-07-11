@@ -49,7 +49,7 @@ impl Validator {
                 // Check if this input is connected
                 let is_connected = false; // TODO: Check actual connections
                 if !is_connected {
-                    result = result.with_error(format!(
+                    *result = result.clone().with_error(format!(
                         "Node {} has unconnected required input: {}",
                         node.id, input.name
                     ));
@@ -68,7 +68,7 @@ impl Validator {
             "If" => {
                 // Check if condition property exists
                 if !node.properties.contains_key("condition") {
-                    result = result.with_error(format!(
+                    *result = result.clone().with_error(format!(
                         "If node {} missing required 'condition' property",
                         node.id
                     ));
@@ -77,7 +77,7 @@ impl Validator {
             "WriteStorage" => {
                 // Check if key property exists
                 if !node.properties.contains_key("key") {
-                    result = result.with_error(format!(
+                    *result = result.clone().with_error(format!(
                         "WriteStorage node {} missing required 'key' property",
                         node.id
                     ));
@@ -85,7 +85,7 @@ impl Validator {
             }
             _ => {
                 // Unknown node type - warning
-                result = result.with_warning(format!(
+                *result = result.clone().with_warning(format!(
                     "Unknown node type: {}",
                     node.node_type
                 ));
@@ -103,7 +103,7 @@ impl Validator {
         // Check if source node exists
         let source_node = graph.get_node(connection.source_node);
         if source_node.is_none() {
-            result = result.with_error(format!(
+            *result = result.clone().with_error(format!(
                 "Connection {} references non-existent source node: {}",
                 connection.id, connection.source_node
             ));
@@ -113,7 +113,7 @@ impl Validator {
         // Check if target node exists
         let target_node = graph.get_node(connection.target_node);
         if target_node.is_none() {
-            result = result.with_error(format!(
+            *result = result.clone().with_error(format!(
                 "Connection {} references non-existent target node: {}",
                 connection.id, connection.target_node
             ));
@@ -126,7 +126,7 @@ impl Validator {
         // Check if source port exists
         let source_port = source_node.outputs.iter().find(|p| p.id == connection.source_port);
         if source_port.is_none() {
-            result = result.with_error(format!(
+            *result = result.clone().with_error(format!(
                 "Connection {} references non-existent source port: {}",
                 connection.id, connection.source_port
             ));
@@ -136,7 +136,7 @@ impl Validator {
         // Check if target port exists
         let target_port = target_node.inputs.iter().find(|p| p.id == connection.target_port);
         if target_port.is_none() {
-            result = result.with_error(format!(
+            *result = result.clone().with_error(format!(
                 "Connection {} references non-existent target port: {}",
                 connection.id, connection.target_port
             ));
@@ -148,7 +148,7 @@ impl Validator {
 
         // Check type compatibility
         if !source_port.value_type.is_compatible_with(&target_port.value_type) {
-            result = result.with_error(format!(
+            *result = result.clone().with_error(format!(
                 "Type mismatch in connection {}: {} -> {}",
                 connection.id,
                 format!("{:?}", source_port.value_type),
@@ -161,13 +161,13 @@ impl Validator {
     fn validate_graph_structure(&self, graph: &VisualGraph, result: &mut ValidationResult) {
         // Check for cycles (basic implementation)
         if self.has_cycles(graph) {
-            result = result.with_error("Graph contains cycles".to_string());
+            *result = result.clone().with_error("Graph contains cycles".to_string());
         }
 
         // Check for unreachable nodes
         let unreachable = self.find_unreachable_nodes(graph);
         if !unreachable.is_empty() {
-            result = result.with_warning(format!(
+            *result = result.clone().with_warning(format!(
                 "Unreachable nodes found: {:?}",
                 unreachable
             ));
@@ -176,7 +176,7 @@ impl Validator {
         // Check for disconnected components
         let components = self.find_connected_components(graph);
         if components.len() > 1 {
-            result = result.with_warning(format!(
+            *result = result.clone().with_warning(format!(
                 "Graph has {} disconnected components",
                 components.len()
             ));

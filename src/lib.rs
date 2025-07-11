@@ -5,19 +5,24 @@
 
 pub mod compiler;
 pub mod nodes;
+pub mod validator;
 pub mod wasm;
 pub mod baals;
+pub mod ai;
 pub mod error;
 pub mod types;
 pub mod config;
 
 pub use error::{CanvasError, CanvasResult};
 pub use types::*;
+pub use serde::{Deserialize, Serialize};
 
 /// Re-export commonly used types
 pub use compiler::Compiler;
 pub use nodes::{Node, NodeContext, NodeDefinition};
 pub use wasm::WasmRuntime;
+pub use baals::BaalsClient;
+pub use ai::AiAssistant;
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
