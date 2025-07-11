@@ -1,141 +1,115 @@
-# Canvas Contracts - Stubs and Placeholders
+# Canvas Contracts - Current Stub Implementations
 
-This file tracks placeholder implementations, future work items, and components that need to be completed.
+This file tracks actual stub implementations and TODO items that need to be completed in the current codebase.
 
-## Phase 1: Foundation & Core Architecture
+## Backend Stubs
 
-### 1.2 Core Backend Architecture (Rust)
+### Compiler Pipeline
+- `src/compiler/mod.rs:30` - Full compilation pipeline implementation
+- `src/compiler/graph_ir.rs:2` - Graph IR generation from visual graph
+- `src/compiler/ast.rs:2` - AST generation from Graph IR
+- `src/compiler/wasm_gen.rs:2` - WASM generation from AST
+- `src/compiler/wasm_gen.rs:27` - WASM generation implementation
 
-#### Contract Compiler Pipeline
-- [ ] Graph IR generation - needs implementation
-- [ ] AST generation - needs implementation  
-- [ ] WASM code generation - needs implementation
-- [ ] ABI generation - needs implementation
-
-#### Node Definition Language (NDL)
-- [ ] Schema definition - needs implementation
-- [ ] Node property validation - needs implementation
-- [ ] Compiler hints - needs implementation
-- [ ] Extensible node system - needs implementation
-
-#### WASM Runtime Integration
-- [ ] wasmtime integration - needs implementation
-- [ ] Sandboxed execution - needs implementation
-- [ ] Gas metering - needs implementation
-- [ ] Error handling - needs implementation
-
-### 1.3 BaaLS Integration
-- [ ] Rust FFI bindings - needs BaaLS SDK
-- [ ] WASM host functions - needs BaaLS implementation
-- [ ] Local node management - needs BaaLS node
-- [ ] Transaction handling - needs BaaLS integration
-
-## Phase 2: Visual Editor & Frontend
-
-### 2.1 Frontend Application Architecture
-- [ ] Technology stack selection - Electron vs Tauri decision needed
-- [ ] React framework setup - needs implementation
-- [ ] State management - needs implementation
-- [ ] TypeScript configuration - needs implementation
-
-### 2.2 Node System Implementation
-- [ ] Built-in node library - needs implementation
-- [ ] Node palette - needs implementation
-- [ ] Property panels - needs implementation
-- [ ] Custom node import - needs implementation
-
-### 2.3 Visual Programming Interface
-- [ ] Canvas editor features - needs implementation
-- [ ] Connection system - needs implementation
-- [ ] Drag and drop - needs implementation
-- [ ] Zoom and pan - needs implementation
-
-## Phase 3: AI Assistant & Intelligence
-
-### 3.1 Non-LLM AI Components
-- [ ] Pattern recognition engine - needs implementation
-- [ ] Rule-based validation - needs implementation
-- [ ] Optimization engine - needs implementation
-- [ ] Security vulnerability detection - needs implementation
-
-### 3.2 Testing & Quality Assurance
-- [ ] Automated test generation - needs implementation
-- [ ] Visual debugging system - needs implementation
-- [ ] Gas usage visualization - needs implementation
-- [ ] Real-time execution tracing - needs implementation
-
-## Phase 4: Advanced Features & Integration
-
-### 4.1 Custom Node System
-- [ ] Code node implementation - needs implementation
-- [ ] Multi-language support - needs implementation
-- [ ] WASM module import - needs implementation
-- [ ] Custom node packaging - needs implementation
-
-### 4.2 Deployment & Monitoring
-- [ ] Deployment pipeline - needs implementation
-- [ ] Multi-blockchain support - needs implementation
-- [ ] Contract monitoring - needs implementation
-- [ ] Performance metrics - needs implementation
-
-### 4.3 Template System
-- [ ] Pre-built templates - needs implementation
-- [ ] Template creation system - needs implementation
-- [ ] Template sharing - needs implementation
-
-## Phase 5: Ecosystem & Community
-
-### 5.1 Marketplace & Sharing
-- [ ] Component marketplace - needs implementation
-- [ ] Template marketplace - needs implementation
-- [ ] Rating system - needs implementation
-- [ ] Monetization platform - needs implementation
-
-### 5.2 Developer Tools & SDK
-- [ ] Developer SDK - needs implementation
-- [ ] CLI tools - needs implementation
-- [ ] API documentation - needs implementation
-- [ ] Integration guides - needs implementation
-
-### 5.3 Documentation & Community
-- [ ] Documentation system - needs implementation
-- [ ] Video tutorials - needs implementation
-- [ ] Community building - needs implementation
-- [ ] Open source guidelines - needs implementation
-
-## Phase 6: Production & Scale
-
-### 6.1 Performance Optimization
-- [ ] Large graph optimization - needs implementation
-- [ ] Memory usage optimization - needs implementation
-- [ ] Compilation speed improvements - needs implementation
-- [ ] Runtime performance enhancements - needs implementation
-
-### 6.2 Security & Auditing
-- [ ] Security audit integration - needs implementation
-- [ ] Vulnerability scanning - needs implementation
-- [ ] Code review automation - needs implementation
-- [ ] Compliance tools - needs implementation
-
-## Dependencies and External Requirements
+### WASM Runtime
+- `src/wasm/mod.rs:37` - Actual WASM execution using wasmtime
+- `src/wasm/mod.rs:87` - Actual WASM function execution
+- `src/wasm/mod.rs:120` - WASM validation using wasmtime
+- `src/wasm/mod.rs:143` - Export extraction using wasmtime
+- `src/wasm/mod.rs:156` - Import extraction using wasmtime
+- `src/wasm/mod.rs:188` - Actual security analysis
+- `src/wasm/mod.rs:206` - Actual performance analysis
 
 ### BaaLS Integration
-- BaaLS SDK needs to be available
-- BaaLS node implementation needed
-- WASM host function specifications needed
+- `src/baals/mod.rs:63` - Actual contract deployment
+- `src/baals/mod.rs:92` - Actual contract call
+- `src/baals/mod.rs:129` - Actual state retrieval
+- `src/baals/mod.rs:148` - Actual storage read
+- `src/baals/mod.rs:158` - Actual transaction status check
+- `src/baals/mod.rs:174` - Actual block info retrieval
+- `src/baals/mod.rs:192` - Actual local node startup
+- `src/baals/mod.rs:202` - Actual local node shutdown
+- `src/baals/mod.rs:210` - Actual node status check
 
-### Blockchain Integration
-- Target blockchain specifications needed
-- RPC/API connectors needed
-- Transaction format specifications needed
+### Custom Node System
+- `src/nodes/custom/mod.rs:185` - WASM module loading
+- `src/nodes/custom/mod.rs:198` - Composite node execution
+- `src/nodes/custom/mod.rs:228` - WASM function execution
+- `src/nodes/custom/mod.rs:254` - Script execution
 
-### AI/ML Components
-- Pattern matching algorithms needed
-- Graph analysis libraries needed
-- Optimization algorithms needed
+### Debugger System
+- `src/debugger/mod.rs:189` - Composite node debugging
+- `src/debugger/mod.rs:354` - Condition evaluation
+- `src/debugger/mod.rs:399` - Actual node execution logic
+- `src/debugger/mod.rs:410` - Composite node data extraction
 
-### Community Infrastructure
-- Marketplace platform needed
-- User authentication system needed
-- Payment processing needed
-- Content moderation needed 
+### Validator System
+- `src/validator.rs:224` - Cycle detection
+- `src/validator.rs:230` - Unreachable node detection
+- `src/validator.rs:236` - Connected component detection
+- `src/compiler/validator.rs:49` - Check actual connections
+- `src/compiler/validator.rs:65` - Property validation based on node type
+- `src/compiler/validator.rs:187` - Cycle detection using DFS
+- `src/compiler/validator.rs:193` - Reachability analysis
+- `src/compiler/validator.rs:199` - Connected components analysis
+
+### AI Assistant
+- `src/ai/mod.rs:222` - Context analysis
+- `src/ai/optimization.rs:56` - Graph modification
+
+### Node System
+- `src/nodes/mod.rs:82` - Node creation based on definition
+
+## Frontend Stubs
+
+### Debugger Component
+- `frontend/src/components/Debugger.tsx:67` - Actual debug start
+- `frontend/src/components/Debugger.tsx:97` - Continue execution
+- `frontend/src/components/Debugger.tsx:111` - Step next
+- `frontend/src/components/Debugger.tsx:129` - Step into
+- `frontend/src/components/Debugger.tsx:143` - Step out
+
+### Toolbar Component
+- `frontend/src/components/Toolbar.tsx:10` - Compile functionality
+- `frontend/src/components/Toolbar.tsx:15` - Validation
+- `frontend/src/components/Toolbar.tsx:20` - Deployment
+
+### Custom Node Creator
+- `frontend/src/components/CustomNodeCreator.tsx:76` - Save functionality
+- `frontend/src/components/CustomNodeCreator.tsx:166` - WASM file import
+
+### Node Palette
+- `frontend/src/components/NodePalette.tsx:97` - Drag and drop
+
+## CLI Stubs
+
+### Compiler Binary
+- `src/bin/compiler.rs:65` - Load graph from file
+- `src/bin/compiler.rs:71` - Write WASM to output file
+- `src/bin/compiler.rs:82` - Load graph from file
+
+### Runtime Binary
+- `src/bin/runtime.rs:86` - Load WASM from file
+- `src/bin/runtime.rs:105` - Load WASM from file
+- `src/bin/runtime.rs:128` - Load WASM from file
+
+## Priority Order
+
+### High Priority (Core Functionality)
+1. WASM execution using wasmtime
+2. Graph IR generation
+3. AST generation
+4. WASM generation
+5. Node execution logic
+
+### Medium Priority (Integration)
+1. BaaLS integration stubs
+2. File I/O operations
+3. Debugger execution logic
+4. Custom node execution
+
+### Low Priority (Enhancement)
+1. AI context analysis
+2. Advanced validation algorithms
+3. Frontend drag and drop
+4. Performance optimizations 
