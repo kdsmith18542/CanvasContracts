@@ -2,6 +2,7 @@ import React from 'react'
 import { CanvasEditor } from './components/CanvasEditor'
 import { NodePalette } from './components/NodePalette'
 import { Toolbar } from './components/Toolbar'
+import { AiAssistant } from './components/AiAssistant'
 
 function App() {
     return (
@@ -10,6 +11,7 @@ function App() {
             <div className="flex-1 flex">
                 <NodePalette />
                 <CanvasEditor />
+                <AiAssistant />
             </div>
         </div>
     )
