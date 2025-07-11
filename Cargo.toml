@@ -1,0 +1,86 @@
+[package]
+name = "canvas-contracts"
+version = "0.1.0"
+edition = "2021"
+authors = ["Canvas Contracts Team"]
+description = "Visual smart contract development platform"
+license = "MIT"
+repository = "https://github.com/kdsmith18542/CanvasContracts"
+keywords = ["blockchain", "smart-contracts", "wasm", "visual-programming"]
+categories = ["blockchain", "development-tools"]
+
+[dependencies]
+# Core dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+env_logger = "0.10"
+
+# WASM and runtime
+wasmtime = "15.0"
+wasmtime-wasi = "15.0"
+wasm-pack = "0.12"
+wat = "1.0"
+
+# Graph and data structures
+petgraph = "0.6"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Cryptography
+sha2 = "0.10"
+ed25519-dalek = "2.0"
+rand = "0.8"
+
+# JSON Schema validation
+jsonschema = "0.17"
+
+# Async runtime
+async-trait = "0.1"
+futures = "0.3"
+
+# Configuration
+config = "0.13"
+toml = "0.8"
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+
+# Testing
+proptest = "1.3"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[dev-dependencies]
+tempfile = "3.8"
+assert_fs = "1.1"
+
+[features]
+default = ["full"]
+full = ["compiler", "runtime", "cli"]
+compiler = []
+runtime = []
+cli = []
+
+[[bin]]
+name = "canvas-contracts"
+path = "src/main.rs"
+
+[[bin]]
+name = "canvas-compiler"
+path = "src/bin/compiler.rs"
+
+[[bin]]
+name = "canvas-runtime"
+path = "src/bin/runtime.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true 
