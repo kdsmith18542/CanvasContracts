@@ -1,7 +1,12 @@
 import React from 'react'
-import { Play, CheckCircle, Upload, Save, Settings } from 'lucide-react'
+import { Play, CheckCircle, Upload, Save, Settings, Bug, Plus } from 'lucide-react'
 
-export const Toolbar: React.FC = () => {
+interface ToolbarProps {
+    onDebugToggle: () => void
+    onCustomNodeToggle: () => void
+}
+
+export const Toolbar: React.FC<ToolbarProps> = ({ onDebugToggle, onCustomNodeToggle }) => {
     const handleCompile = async () => {
         // TODO: Implement compile functionality
         console.log('Compiling contract...')
@@ -24,6 +29,22 @@ export const Toolbar: React.FC = () => {
             </div>
 
             <div className="flex items-center space-x-2">
+                <button
+                    onClick={onCustomNodeToggle}
+                    className="flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Custom Node
+                </button>
+
+                <button
+                    onClick={onDebugToggle}
+                    className="flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                    <Bug className="w-4 h-4 mr-1" />
+                    Debug
+                </button>
+
                 <button
                     onClick={handleValidate}
                     className="flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"

@@ -17,6 +17,12 @@ pub enum CanvasError {
     #[error("Node error: {0}")]
     Node(String),
 
+    #[error("Node not found: {0}")]
+    NodeNotFound(String),
+
+    #[error("Breakpoint not found: {0}")]
+    BreakpointNotFound(String),
+
     #[error("BaaLS error: {0}")]
     Baals(String),
 
@@ -55,6 +61,9 @@ pub enum CanvasError {
 
     #[error("Network error: {0}")]
     Network(String),
+
+    #[error("Execution error: {0}")]
+    ExecutionError(String),
 
     #[error("Unknown error: {0}")]
     Unknown(String),

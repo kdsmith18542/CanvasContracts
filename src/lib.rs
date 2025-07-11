@@ -9,6 +9,7 @@ pub mod validator;
 pub mod wasm;
 pub mod baals;
 pub mod ai;
+pub mod debugger;
 pub mod error;
 pub mod types;
 pub mod config;
@@ -23,6 +24,7 @@ pub use nodes::{Node, NodeContext, NodeDefinition};
 pub use wasm::WasmRuntime;
 pub use baals::BaalsClient;
 pub use ai::AiAssistant;
+pub use debugger::{DebugSession, DebuggerUtils, DebugConfig};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
