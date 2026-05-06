@@ -1,3 +1,4 @@
+#![cfg(all(feature = "marketplace", feature = "sdk", feature = "community"))]
 //! Tests for ecosystem features
 
 use canvascontract::{

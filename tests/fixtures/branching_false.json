@@ -1,0 +1,90 @@
+{
+  "id": "00000000-0000-0000-0000-000000000003",
+  "name": "Branching False",
+  "description": "Start → If(false) → WriteStorage(fallback) → End",
+  "nodes": [
+    {
+      "id": "c0000000-0000-0000-0000-000000000001",
+      "node_type": "Start",
+      "position": { "x": 0.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [],
+      "outputs": [
+        { "id": "flow_out", "name": "Flow Out", "value_type": "Flow", "required": false, "description": null }
+      ],
+      "properties": {},
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000002",
+      "node_type": "If",
+      "position": { "x": 200.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null },
+        { "id": "condition", "name": "Condition", "value_type": "Boolean", "required": true, "description": null }
+      ],
+      "outputs": [
+        { "id": "true_flow", "name": "True Flow", "value_type": "Flow", "required": false, "description": null },
+        { "id": "false_flow", "name": "False Flow", "value_type": "Flow", "required": false, "description": null }
+      ],
+      "properties": { "condition": false },
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000003",
+      "node_type": "WriteStorage",
+      "position": { "x": 400.0, "y": 60.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null },
+        { "id": "key", "name": "Key", "value_type": "String", "required": true, "description": null },
+        { "id": "value", "name": "Value", "value_type": "Any", "required": true, "description": null }
+      ],
+      "outputs": [
+        { "id": "flow_out", "name": "Flow Out", "value_type": "Flow", "required": false, "description": null }
+      ],
+      "properties": { "key": "branch_result", "value": "false_path" },
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000004",
+      "node_type": "End",
+      "position": { "x": 600.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null }
+      ],
+      "outputs": [],
+      "properties": {},
+      "metadata": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "c0000000-0000-0000-0000-000000000020",
+      "source_node": "c0000000-0000-0000-0000-000000000001",
+      "source_port": "flow_out",
+      "target_node": "c0000000-0000-0000-0000-000000000002",
+      "target_port": "flow_in",
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000021",
+      "source_node": "c0000000-0000-0000-0000-000000000002",
+      "source_port": "false_flow",
+      "target_node": "c0000000-0000-0000-0000-000000000003",
+      "target_port": "flow_in",
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000022",
+      "source_node": "c0000000-0000-0000-0000-000000000003",
+      "source_port": "flow_out",
+      "target_node": "c0000000-0000-0000-0000-000000000004",
+      "target_port": "flow_in",
+      "metadata": {}
+    }
+  ],
+  "metadata": {}
+}

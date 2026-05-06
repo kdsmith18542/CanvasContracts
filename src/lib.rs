@@ -3,22 +3,41 @@
 //! This library provides the core functionality for building, compiling, and executing
 //! visual smart contracts using WebAssembly.
 
+// ── Core modules (Phase 1) ──────────────────────────────────────────
 pub mod compiler;
 pub mod nodes;
-pub mod validator;
 pub mod wasm;
 pub mod baals;
-pub mod ai;
-pub mod debugger;
-pub mod marketplace;
-pub mod sdk;
-pub mod community;
-pub mod deployment;
 pub mod error;
-pub mod monitoring;
-pub mod optimization;
 pub mod types;
 pub mod config;
+
+// ── Phase 3+ modules ────────────────────────────────────────────────
+// These are gated behind feature flags until their prerequisites are
+// implemented. They currently reference types and modules that don't
+// exist yet, causing ~100 compilation errors.
+#[cfg(feature = "ai")]
+pub mod ai;
+#[cfg(feature = "debugger")]
+pub mod debugger;
+#[cfg(feature = "marketplace")]
+pub mod marketplace;
+#[cfg(feature = "sdk")]
+pub mod sdk;
+#[cfg(feature = "community")]
+pub mod community;
+#[cfg(feature = "deployment")]
+pub mod deployment;
+#[cfg(feature = "monitoring")]
+pub mod monitoring;
+#[cfg(feature = "optimization")]
+pub mod optimization;
+
+// NOTE: src/validator.rs is a duplicate of compiler::Validator with a
+// divergent ValidationResult type. Removed from the public API to
+// consolidate on compiler::Validator. The file is preserved on disk
+// for reference.
+// pub mod validator;
 
 pub use error::{CanvasError, CanvasResult};
 pub use types::*;
@@ -29,10 +48,17 @@ pub use compiler::Compiler;
 pub use nodes::{Node, NodeContext, NodeDefinition};
 pub use wasm::WasmRuntime;
 pub use baals::BaalsClient;
+
+// Re-exports for feature-gated modules
+#[cfg(feature = "ai")]
 pub use ai::AiAssistant;
+#[cfg(feature = "debugger")]
 pub use debugger::{DebugSession, DebuggerUtils, DebugConfig};
+#[cfg(feature = "monitoring")]
 pub use monitoring::{MetricsCollector, HealthChecker, CircuitBreaker};
+#[cfg(feature = "optimization")]
 pub use optimization::{PerformanceOptimizer, ResourceUsageAnalyzer};
+#[cfg(feature = "deployment")]
 pub use deployment::{DeploymentManager, BlueGreenDeploymentManager, CanaryDeploymentManager};
 
 /// Version information
@@ -41,7 +67,6 @@ pub const NAME: &str = env!("CARGO_PKG_NAME");
 
 /// Initialize the Canvas Contracts library
 pub fn init() -> CanvasResult<()> {
-    env_logger::init();
     log::info!("Initializing Canvas Contracts v{}", VERSION);
     Ok(())
 }
@@ -79,4 +104,4 @@ mod tests {
         assert!(!info.version.is_empty());
         assert!(!info.description.is_empty());
     }
-} 
+}

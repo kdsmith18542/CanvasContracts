@@ -209,7 +209,9 @@ fn create_not_node() -> NodeDefinition {
 
 fn create_read_storage_node() -> NodeDefinition {
     NodeDefinition::new("ReadStorage", "Read Storage", "Reads a value from contract storage", "State")
+        .with_input(Port::new("flow_in", "Flow In", ValueType::Flow).required())
         .with_input(Port::new("key", "Key", ValueType::String).required())
+        .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
         .with_output(Port::new("value", "Value", ValueType::Any))
         .with_config_schema(serde_json::json!({
             "type": "object",
@@ -227,12 +229,20 @@ fn create_read_storage_node() -> NodeDefinition {
             gas_cost: Some(100),
             optimizable: false,
         })
+        .with_visual(VisualProperties {
+            width: 140.0,
+            height: 100.0,
+            color: "#4ECDC4".to_string(),
+            icon: Some("database".to_string()),
+        })
 }
 
 fn create_write_storage_node() -> NodeDefinition {
     NodeDefinition::new("WriteStorage", "Write Storage", "Writes a value to contract storage", "State")
+        .with_input(Port::new("flow_in", "Flow In", ValueType::Flow).required())
         .with_input(Port::new("key", "Key", ValueType::String).required())
         .with_input(Port::new("value", "Value", ValueType::Any).required())
+        .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
         .with_config_schema(serde_json::json!({
             "type": "object",
             "properties": {
@@ -249,12 +259,20 @@ fn create_write_storage_node() -> NodeDefinition {
             gas_cost: Some(200),
             optimizable: false,
         })
+        .with_visual(VisualProperties {
+            width: 140.0,
+            height: 100.0,
+            color: "#45B7D1".to_string(),
+            icon: Some("save".to_string()),
+        })
 }
 
 fn create_add_node() -> NodeDefinition {
     NodeDefinition::new("Add", "Add", "Adds two numbers", "Arithmetic")
+        .with_input(Port::new("flow_in", "Flow In", ValueType::Flow))
         .with_input(Port::new("a", "A", ValueType::Integer).required())
         .with_input(Port::new("b", "B", ValueType::Integer).required())
+        .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
         .with_output(Port::new("result", "Result", ValueType::Integer))
         .with_compiler_hint(CompilerHint {
             operation_type: "add".to_string(),
@@ -266,8 +284,10 @@ fn create_add_node() -> NodeDefinition {
 
 fn create_subtract_node() -> NodeDefinition {
     NodeDefinition::new("Subtract", "Subtract", "Subtracts two numbers", "Arithmetic")
+        .with_input(Port::new("flow_in", "Flow In", ValueType::Flow))
         .with_input(Port::new("a", "A", ValueType::Integer).required())
         .with_input(Port::new("b", "B", ValueType::Integer).required())
+        .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
         .with_output(Port::new("result", "Result", ValueType::Integer))
         .with_compiler_hint(CompilerHint {
             operation_type: "subtract".to_string(),
@@ -279,8 +299,10 @@ fn create_subtract_node() -> NodeDefinition {
 
 fn create_multiply_node() -> NodeDefinition {
     NodeDefinition::new("Multiply", "Multiply", "Multiplies two numbers", "Arithmetic")
+        .with_input(Port::new("flow_in", "Flow In", ValueType::Flow))
         .with_input(Port::new("a", "A", ValueType::Integer).required())
         .with_input(Port::new("b", "B", ValueType::Integer).required())
+        .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
         .with_output(Port::new("result", "Result", ValueType::Integer))
         .with_compiler_hint(CompilerHint {
             operation_type: "multiply".to_string(),
@@ -292,8 +314,10 @@ fn create_multiply_node() -> NodeDefinition {
 
 fn create_divide_node() -> NodeDefinition {
     NodeDefinition::new("Divide", "Divide", "Divides two numbers", "Arithmetic")
+        .with_input(Port::new("flow_in", "Flow In", ValueType::Flow))
         .with_input(Port::new("a", "A", ValueType::Integer).required())
         .with_input(Port::new("b", "B", ValueType::Integer).required())
+        .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
         .with_output(Port::new("result", "Result", ValueType::Integer))
         .with_compiler_hint(CompilerHint {
             operation_type: "divide".to_string(),

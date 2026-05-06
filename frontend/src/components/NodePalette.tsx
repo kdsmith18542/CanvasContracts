@@ -4,6 +4,8 @@ import {
     Square,
     Plus,
     Minus,
+    X,
+    Divide,
     Database,
     Settings,
     Zap,
@@ -52,6 +54,24 @@ const nodeCategories: NodeCategory[] = [
                 name: 'If Condition',
                 description: 'Conditional execution',
                 icon: <Settings className="w-4 h-4" />
+            },
+            {
+                type: 'And',
+                name: 'AND',
+                description: 'Logical AND operation',
+                icon: <Settings className="w-4 h-4" />
+            },
+            {
+                type: 'Or',
+                name: 'OR',
+                description: 'Logical OR operation',
+                icon: <Settings className="w-4 h-4" />
+            },
+            {
+                type: 'Not',
+                name: 'NOT',
+                description: 'Logical NOT operation',
+                icon: <Settings className="w-4 h-4" />
             }
         ]
     },
@@ -70,6 +90,18 @@ const nodeCategories: NodeCategory[] = [
                 name: 'Subtract',
                 description: 'Subtract two numbers',
                 icon: <Minus className="w-4 h-4" />
+            },
+            {
+                type: 'Multiply',
+                name: 'Multiply',
+                description: 'Multiply two numbers',
+                icon: <X className="w-4 h-4" />
+            },
+            {
+                type: 'Divide',
+                name: 'Divide',
+                description: 'Divide two numbers',
+                icon: <Divide className="w-4 h-4" />
             }
         ]
     },

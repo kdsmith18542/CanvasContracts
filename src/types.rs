@@ -446,4 +446,46 @@ mod tests {
         assert!(context.use_gas(500).is_ok());
         assert!(context.use_gas(600).is_err());
     }
-} 
+}
+
+/// Execution trace for debugging and analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionTrace {
+    pub steps: Vec<ExecutionStep>,
+    pub total_gas: Gas,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+impl ExecutionTrace {
+    pub fn new() -> Self {
+        Self {
+            steps: Vec::new(),
+            total_gas: 0,
+            success: true,
+            error: None,
+        }
+    }
+
+    pub fn add_step(&mut self, step: ExecutionStep) {
+        self.total_gas += step.gas_consumed;
+        if step.error.is_some() {
+            self.success = false;
+            self.error = step.error.clone();
+        }
+        self.steps.push(step);
+    }
+}
+
+/// A single step in an execution trace
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionStep {
+    pub step_number: usize,
+    pub node_id: NodeId,
+    pub node_type: String,
+    pub inputs: HashMap<PortId, serde_json::Value>,
+    pub outputs: HashMap<PortId, serde_json::Value>,
+    pub gas_consumed: Gas,
+    pub duration_ms: u64,
+    pub error: Option<String>,
+}

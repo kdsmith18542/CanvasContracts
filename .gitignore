@@ -6,12 +6,16 @@ Cargo.lock
 
 # Node.js
 node_modules/
+frontend/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .npm
+frontend/.npm
 .yarn-integrity
+frontend/.yarn-integrity
 .pnp.*
+frontend/.pnp.*
 
 # Environment variables
 .env
@@ -38,8 +42,11 @@ Thumbs.db
 
 # Build outputs
 /dist/
+frontend/dist/
 /build/
+frontend/build/
 /out/
+frontend/out/
 *.wasm
 *.wat
 
@@ -107,13 +114,12 @@ public
 tmp/
 temp/
 
-# Electron
-/out/
-/dist/
-
 # Tauri
 src-tauri/target/
+frontend/src-tauri/target/
 src-tauri/Cargo.lock
+frontend/src-tauri/Cargo.lock
+frontend/src-tauri/gen/
 
 # WASM
 *.wasm

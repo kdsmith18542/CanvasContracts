@@ -103,17 +103,19 @@ enum Commands {
 fn main() -> CanvasResult<()> {
     let cli = Cli::parse();
 
-    // Initialize the library
-    init()?;
-
-    // Set up logging
+    // Set up logging first, before anything that might log
     let log_level = if cli.debug {
         "debug"
     } else {
         &cli.log_level
     };
-    std::env::set_var("RUST_LOG", log_level);
-    env_logger::init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or(log_level),
+    )
+    .init();
+
+    // Initialize the library (no longer calls env_logger::init)
+    init()?;
 
     info!("Starting Canvas Contracts v{}", env!("CARGO_PKG_VERSION"));
 

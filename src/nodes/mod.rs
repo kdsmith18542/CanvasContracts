@@ -3,13 +3,15 @@
 mod definitions;
 mod implementations;
 
+use std::collections::HashMap;
+
 use crate::{
     error::{CanvasError, CanvasResult},
     types::{ExecutionContext, NodeResult, PortId, ValueType},
 };
 
-pub use definitions::NodeDefinition;
-pub use implementations::Node;
+pub use definitions::{NodeDefinition, builtin_node_definitions};
+pub use implementations::{Node, NodeFactory};
 
 /// Node context for execution
 pub struct NodeContext {
@@ -75,13 +77,13 @@ impl NodeRegistry {
         self.definitions.keys().cloned().collect()
     }
 
-    pub fn create_node(&self, node_type: &str) -> CanvasResult<Box<dyn Node>> {
-        let definition = self
+    pub fn create_node(&self, node_type: &str, properties: &HashMap<String, serde_json::Value>) -> CanvasResult<Box<dyn Node>> {
+        let _definition = self
             .get_node_definition(node_type)
             .ok_or_else(|| CanvasError::Node(format!("Unknown node type: {}", node_type)))?;
 
-        // TODO: Implement node creation based on definition
-        Err(CanvasError::Node("Node creation not yet implemented".to_string()))
+        // Delegate to NodeFactory with provided properties.
+        implementations::NodeFactory::create_node(node_type, properties)
     }
 }
 

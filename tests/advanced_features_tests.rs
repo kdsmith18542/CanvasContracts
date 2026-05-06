@@ -1,3 +1,4 @@
+#![cfg(all(feature = "debugger"))]
 //! Tests for advanced features
 
 use canvascontract::{

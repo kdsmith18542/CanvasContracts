@@ -1,0 +1,117 @@
+{
+  "id": "00000000-0000-0000-0000-000000000004",
+  "name": "Multi Arithmetic",
+  "description": "Start → Add(5,3) → Multiply(2,4) → Subtract(10,4) → End (each node with independent inputs)",
+  "nodes": [
+    {
+      "id": "d0000000-0000-0000-0000-000000000001",
+      "node_type": "Start",
+      "position": { "x": 0.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [],
+      "outputs": [
+        { "id": "flow_out", "name": "Flow Out", "value_type": "Flow", "required": false, "description": null }
+      ],
+      "properties": {},
+      "metadata": {}
+    },
+    {
+      "id": "d0000000-0000-0000-0000-000000000002",
+      "node_type": "Add",
+      "position": { "x": 200.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null },
+        { "id": "a", "name": "A", "value_type": "Integer", "required": true, "description": null },
+        { "id": "b", "name": "B", "value_type": "Integer", "required": true, "description": null }
+      ],
+      "outputs": [
+        { "id": "flow_out", "name": "Flow Out", "value_type": "Flow", "required": false, "description": null },
+        { "id": "result", "name": "Result", "value_type": "Integer", "required": false, "description": null }
+      ],
+      "properties": { "a": 5, "b": 3 },
+      "metadata": {}
+    },
+    {
+      "id": "d0000000-0000-0000-0000-000000000003",
+      "node_type": "Multiply",
+      "position": { "x": 400.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null },
+        { "id": "a", "name": "A", "value_type": "Integer", "required": true, "description": null },
+        { "id": "b", "name": "B", "value_type": "Integer", "required": true, "description": null }
+      ],
+      "outputs": [
+        { "id": "flow_out", "name": "Flow Out", "value_type": "Flow", "required": false, "description": null },
+        { "id": "result", "name": "Result", "value_type": "Integer", "required": false, "description": null }
+      ],
+      "properties": { "a": 2, "b": 4 },
+      "metadata": {}
+    },
+    {
+      "id": "d0000000-0000-0000-0000-000000000004",
+      "node_type": "Subtract",
+      "position": { "x": 600.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null },
+        { "id": "a", "name": "A", "value_type": "Integer", "required": true, "description": null },
+        { "id": "b", "name": "B", "value_type": "Integer", "required": true, "description": null }
+      ],
+      "outputs": [
+        { "id": "flow_out", "name": "Flow Out", "value_type": "Flow", "required": false, "description": null },
+        { "id": "result", "name": "Result", "value_type": "Integer", "required": false, "description": null }
+      ],
+      "properties": { "a": 10, "b": 4 },
+      "metadata": {}
+    },
+    {
+      "id": "d0000000-0000-0000-0000-000000000005",
+      "node_type": "End",
+      "position": { "x": 800.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null }
+      ],
+      "outputs": [],
+      "properties": {},
+      "metadata": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "c0000000-0000-0000-0000-000000000030",
+      "source_node": "d0000000-0000-0000-0000-000000000001",
+      "source_port": "flow_out",
+      "target_node": "d0000000-0000-0000-0000-000000000002",
+      "target_port": "flow_in",
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000031",
+      "source_node": "d0000000-0000-0000-0000-000000000002",
+      "source_port": "flow_out",
+      "target_node": "d0000000-0000-0000-0000-000000000003",
+      "target_port": "flow_in",
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000032",
+      "source_node": "d0000000-0000-0000-0000-000000000003",
+      "source_port": "flow_out",
+      "target_node": "d0000000-0000-0000-0000-000000000004",
+      "target_port": "flow_in",
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000033",
+      "source_node": "d0000000-0000-0000-0000-000000000004",
+      "source_port": "flow_out",
+      "target_node": "d0000000-0000-0000-0000-000000000005",
+      "target_port": "flow_in",
+      "metadata": {}
+    }
+  ],
+  "metadata": {}
+}

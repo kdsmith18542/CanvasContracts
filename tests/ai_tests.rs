@@ -1,3 +1,4 @@
+#![cfg(feature = "ai")]
 use canvas_contracts::{
     ai::{AiAssistant, PatternAnalysis, ValidationResult, OptimizationResult},
     config::Config,

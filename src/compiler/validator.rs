@@ -27,7 +27,7 @@ impl Validator {
 
         // Validate nodes
         for node in &graph.nodes {
-            self.validate_node(node, &mut result);
+            self.validate_node(node, graph, &mut result);
         }
 
         // Validate connections
@@ -42,12 +42,12 @@ impl Validator {
     }
 
     /// Validate a single node
-    fn validate_node(&self, node: &VisualNode, result: &mut ValidationResult) {
+    fn validate_node(&self, node: &VisualNode, graph: &VisualGraph, result: &mut ValidationResult) {
         // Check for required inputs
         for input in &node.inputs {
             if input.required {
                 // Check if this input is connected
-                let is_connected = false; // TODO: Check actual connections
+                let is_connected = graph.connections.iter().any(|c| c.target_node == node.id && c.target_port == input.id);
                 if !is_connected {
                     *result = result.clone().with_error(format!(
                         "Node {} has unconnected required input: {}",
@@ -61,12 +61,11 @@ impl Validator {
         self.validate_node_properties(node, result);
     }
 
-    /// Validate node properties
+    /// Validate node properties based on node type
     fn validate_node_properties(&self, node: &VisualNode, result: &mut ValidationResult) {
-        // TODO: Implement property validation based on node type
         match node.node_type.as_str() {
             "If" => {
-                // Check if condition property exists
+                // If nodes require a condition property
                 if !node.properties.contains_key("condition") {
                     *result = result.clone().with_error(format!(
                         "If node {} missing required 'condition' property",
@@ -75,7 +74,6 @@ impl Validator {
                 }
             }
             "WriteStorage" => {
-                // Check if key property exists
                 if !node.properties.contains_key("key") {
                     *result = result.clone().with_error(format!(
                         "WriteStorage node {} missing required 'key' property",
@@ -83,8 +81,22 @@ impl Validator {
                     ));
                 }
             }
+            "ReadStorage" => {
+                if !node.properties.contains_key("key") {
+                    *result = result.clone().with_error(format!(
+                        "ReadStorage node {} missing required 'key' property",
+                        node.id
+                    ));
+                }
+            }
+            // Arithmetic nodes — no required properties
+            "Add" | "Subtract" | "Multiply" | "Divide" => {}
+            // Logic nodes — no required properties
+            "And" | "Or" | "Not" => {}
+            // Control flow nodes — no required properties
+            "Start" | "End" => {}
             _ => {
-                // Unknown node type - warning
+                // Truly unknown node type
                 *result = result.clone().with_warning(format!(
                     "Unknown node type: {}",
                     node.node_type
@@ -159,13 +171,15 @@ impl Validator {
 
     /// Validate graph structure
     fn validate_graph_structure(&self, graph: &VisualGraph, result: &mut ValidationResult) {
-        // Check for cycles (basic implementation)
-        if self.has_cycles(graph) {
+        let ir = crate::compiler::graph_ir::GraphIR::from_visual_graph(graph);
+
+        // Check for cycles
+        if petgraph::algo::is_cyclic_directed(&ir.graph) {
             *result = result.clone().with_error("Graph contains cycles".to_string());
         }
 
         // Check for unreachable nodes
-        let unreachable = self.find_unreachable_nodes(graph);
+        let unreachable = self.find_unreachable_nodes(&ir, graph);
         if !unreachable.is_empty() {
             *result = result.clone().with_warning(format!(
                 "Unreachable nodes found: {:?}",
@@ -174,8 +188,8 @@ impl Validator {
         }
 
         // Check for disconnected components
-        let components = self.find_connected_components(graph);
-        if components.len() > 1 {
+        let components = petgraph::algo::tarjan_scc(&ir.graph);
+        if components.len() > 1 && !graph.nodes.is_empty() {
             *result = result.clone().with_warning(format!(
                 "Graph has {} disconnected components",
                 components.len()
@@ -183,22 +197,33 @@ impl Validator {
         }
     }
 
-    /// Check if graph has cycles
-    fn has_cycles(&self, graph: &VisualGraph) -> bool {
-        // TODO: Implement cycle detection using DFS
-        false
-    }
+    /// Find unreachable nodes starting from 'Start' nodes
+    fn find_unreachable_nodes(&self, ir: &crate::compiler::graph_ir::GraphIR, graph: &VisualGraph) -> Vec<crate::types::NodeId> {
+        let start_nodes: Vec<_> = ir.nodes.values()
+            .filter(|n| n.node_type == "Start")
+            .filter_map(|n| ir.node_map.get(&n.id))
+            .cloned()
+            .collect();
+        
+        if start_nodes.is_empty() {
+            if graph.nodes.is_empty() {
+                return Vec::new();
+            }
+            return graph.nodes.iter().map(|n| n.id).collect();
+        }
 
-    /// Find unreachable nodes
-    fn find_unreachable_nodes(&self, graph: &VisualGraph) -> Vec<String> {
-        // TODO: Implement reachability analysis
-        Vec::new()
-    }
+        let mut reachable = std::collections::HashSet::new();
+        for start_idx in start_nodes {
+            let mut bfs = petgraph::visit::Bfs::new(&ir.graph, start_idx);
+            while let Some(nx) = bfs.next(&ir.graph) {
+                reachable.insert(ir.graph[nx]);
+            }
+        }
 
-    /// Find connected components
-    fn find_connected_components(&self, graph: &VisualGraph) -> Vec<Vec<String>> {
-        // TODO: Implement connected components analysis
-        vec![graph.nodes.iter().map(|n| n.id.to_string()).collect()]
+        graph.nodes.iter()
+            .map(|n| n.id)
+            .filter(|id| !reachable.contains(id))
+            .collect()
     }
 }
 
@@ -229,7 +254,8 @@ mod tests {
         node = node.with_property("condition".to_string(), serde_json::Value::String("true".to_string()));
 
         let mut result = ValidationResult::valid();
-        validator.validate_node(&node, &mut result);
+        let graph = VisualGraph::new("test");
+        validator.validate_node(&node, &graph, &mut result);
         assert!(result.is_valid);
     }
 
@@ -246,7 +272,8 @@ mod tests {
         );
 
         let mut result = ValidationResult::valid();
-        validator.validate_node(&node, &mut result);
+        let graph = VisualGraph::new("test");
+        validator.validate_node(&node, &graph, &mut result);
         assert!(!result.is_valid);
         assert!(!result.errors.is_empty());
     }

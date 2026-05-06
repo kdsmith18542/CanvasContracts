@@ -205,6 +205,15 @@ impl<T> ErrorContextExt for Result<T, CanvasError> {
                 CanvasError::Unknown(msg) => {
                     CanvasError::Unknown(format!("{}: {}", context.operation, msg))
                 }
+                CanvasError::NodeNotFound(msg) => {
+                    CanvasError::NodeNotFound(format!("{}: {}", context.operation, msg))
+                }
+                CanvasError::BreakpointNotFound(msg) => {
+                    CanvasError::BreakpointNotFound(format!("{}: {}", context.operation, msg))
+                }
+                CanvasError::ExecutionError(msg) => {
+                    CanvasError::ExecutionError(format!("{}: {}", context.operation, msg))
+                }
                 CanvasError::Io(e) => CanvasError::Io(e),
                 CanvasError::Serialization(e) => CanvasError::Serialization(e),
             },

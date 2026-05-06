@@ -1,0 +1,90 @@
+{
+  "id": "00000000-0000-0000-0000-000000000005",
+  "name": "Storage Read-Write",
+  "description": "Start → WriteStorage(v,42) → ReadStorage(v) → End",
+  "nodes": [
+    {
+      "id": "e0000000-0000-0000-0000-000000000001",
+      "node_type": "Start",
+      "position": { "x": 0.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [],
+      "outputs": [
+        { "id": "flow_out", "name": "Flow Out", "value_type": "Flow", "required": false, "description": null }
+      ],
+      "properties": {},
+      "metadata": {}
+    },
+    {
+      "id": "e0000000-0000-0000-0000-000000000002",
+      "node_type": "WriteStorage",
+      "position": { "x": 200.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null },
+        { "id": "key", "name": "Key", "value_type": "String", "required": true, "description": null },
+        { "id": "value", "name": "Value", "value_type": "Any", "required": true, "description": null }
+      ],
+      "outputs": [
+        { "id": "flow_out", "name": "Flow Out", "value_type": "Flow", "required": false, "description": null }
+      ],
+      "properties": { "key": "stored_value", "value": 42 },
+      "metadata": {}
+    },
+    {
+      "id": "e0000000-0000-0000-0000-000000000003",
+      "node_type": "ReadStorage",
+      "position": { "x": 400.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null },
+        { "id": "key", "name": "Key", "value_type": "String", "required": true, "description": null }
+      ],
+      "outputs": [
+        { "id": "flow_out", "name": "Flow Out", "value_type": "Flow", "required": false, "description": null },
+        { "id": "value", "name": "Value", "value_type": "Any", "required": false, "description": null }
+      ],
+      "properties": { "key": "stored_value" },
+      "metadata": {}
+    },
+    {
+      "id": "e0000000-0000-0000-0000-000000000004",
+      "node_type": "End",
+      "position": { "x": 600.0, "y": 0.0 },
+      "size": { "width": 120.0, "height": 80.0 },
+      "inputs": [
+        { "id": "flow_in", "name": "Flow In", "value_type": "Flow", "required": true, "description": null }
+      ],
+      "outputs": [],
+      "properties": {},
+      "metadata": {}
+    }
+  ],
+  "connections": [
+    {
+      "id": "c0000000-0000-0000-0000-000000000040",
+      "source_node": "e0000000-0000-0000-0000-000000000001",
+      "source_port": "flow_out",
+      "target_node": "e0000000-0000-0000-0000-000000000002",
+      "target_port": "flow_in",
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000041",
+      "source_node": "e0000000-0000-0000-0000-000000000002",
+      "source_port": "flow_out",
+      "target_node": "e0000000-0000-0000-0000-000000000003",
+      "target_port": "flow_in",
+      "metadata": {}
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000042",
+      "source_node": "e0000000-0000-0000-0000-000000000003",
+      "source_port": "flow_out",
+      "target_node": "e0000000-0000-0000-0000-000000000004",
+      "target_port": "flow_in",
+      "metadata": {}
+    }
+  ],
+  "metadata": {}
+}
