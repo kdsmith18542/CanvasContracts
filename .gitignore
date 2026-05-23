@@ -133,4 +133,6 @@ frontend/src-tauri/gen/
 .local/
 
 # Project planning
-plan.md 
+plan.md
+agents.md
+AGENTS.md
