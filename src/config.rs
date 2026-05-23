@@ -1,13 +1,13 @@
 //! Configuration management for Canvas Contracts
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::error::{CanvasError, CanvasResult};
 
 /// Main configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Config {
     /// Application settings
     pub app: AppConfig,
@@ -89,6 +89,7 @@ pub struct BaalsConfig {
 
 /// Development configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct DevelopmentConfig {
     /// Enable hot reload
     pub hot_reload: bool,
@@ -102,17 +103,6 @@ pub struct DevelopmentConfig {
     pub mock_baals: bool,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            app: AppConfig::default(),
-            compiler: CompilerConfig::default(),
-            runtime: RuntimeConfig::default(),
-            baals: BaalsConfig::default(),
-            development: DevelopmentConfig::default(),
-        }
-    }
-}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -167,17 +157,6 @@ impl Default for BaalsConfig {
     }
 }
 
-impl Default for DevelopmentConfig {
-    fn default() -> Self {
-        Self {
-            hot_reload: false,
-            verbose_logging: false,
-            profiling: false,
-            test_mode: false,
-            mock_baals: false,
-        }
-    }
-}
 
 impl Config {
     /// Load configuration from file

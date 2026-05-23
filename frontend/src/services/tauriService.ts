@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/tauri'
-import { VisualGraph, CompilationResult, ValidationResult } from '../types'
+import { VisualGraph, CompilationResult, ValidationResult, NodeDefinition } from '../types'
 
 export class TauriService {
     static async compileContract(graph: VisualGraph, optimizationLevel: number = 1): Promise<CompilationResult> {
@@ -33,4 +33,35 @@ export class TauriService {
             throw new Error(`Pattern analysis failed: ${error}`)
         }
     }
-} 
+
+    static async deployContract(wasmBytes: number[], privateKey: string): Promise<DeployResult> {
+        try {
+            const result = await invoke('deploy_contract', {
+                request: {
+                    wasm_bytes: wasmBytes,
+                    private_key: privateKey,
+                }
+            })
+            return result as DeployResult
+        } catch (error) {
+            throw new Error(`Deployment failed: ${error}`)
+        }
+    }
+
+    static async getNodeDefinitions(): Promise<NodeDefinition[]> {
+        try {
+            const result = await invoke('get_node_definitions')
+            return result as NodeDefinition[]
+        } catch (error) {
+            throw new Error(`Failed to get node definitions: ${error}`)
+        }
+    }
+}
+
+export interface DeployResult {
+    success: boolean
+    contract_address: string
+    transaction_hash: string
+    gas_used: number
+    error?: string | null
+}

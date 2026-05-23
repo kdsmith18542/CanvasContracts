@@ -32,22 +32,19 @@ dirs = "5.0"
 # CLI
 clap = { version = "4.0", features = ["derive"] }
 
-# Async (used by BaaLS client)
-async-trait = "0.1"
-futures = "0.3"
-
-# WASM runtime — uncomment when wasmtime integration is implemented
+# WASM runtime
 wasmtime = "15.0"
 
 # WASM code generation
 wasm-encoder = "0.38"
 
-# Cryptographic signing — uncomment when contract signing is implemented
-# sha2 = "0.10"
-# ed25519-dalek = "2.0"
+# Cryptographic signing
+sha2 = "0.10"
+ed25519-dalek = "2.0"
+hex = "0.4"
 
-# JSON Schema validation — uncomment when schema validation is implemented
-# jsonschema = "0.17"
+# HTTP client for BaaLS RPC
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 
 # Phase 3+ module dependencies — uncomment with their feature flags
 # chrono = "0.4"
@@ -65,16 +62,8 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [features]
 default = ["cli"]
 cli = []
-ai = []
-debugger = []
-marketplace = []
-sdk = []
-community = []
-deployment = []
-monitoring = []
-optimization = []
-# Enable all Phase 3+ modules (won't compile until prerequisites are met)
-# all = ["ai", "debugger", "marketplace", "sdk", "community", "deployment", "monitoring", "optimization"]
+# Future modules (source files on disk, not yet compilable):
+# ai, marketplace, sdk, community, deployment, monitoring, optimization
 
 [profile.release]
 opt-level = 3

@@ -136,6 +136,10 @@ pub fn builtin_node_definitions() -> Vec<NodeDefinition> {
         // Control flow nodes
         create_start_node(),
         create_end_node(),
+
+        // Crypto nodes
+        create_verify_signature_node(),
+        create_decode_proof_node(),
     ]
 }
 
@@ -210,7 +214,7 @@ fn create_not_node() -> NodeDefinition {
 fn create_read_storage_node() -> NodeDefinition {
     NodeDefinition::new("ReadStorage", "Read Storage", "Reads a value from contract storage", "State")
         .with_input(Port::new("flow_in", "Flow In", ValueType::Flow).required())
-        .with_input(Port::new("key", "Key", ValueType::String).required())
+        .with_input(Port::new("key", "Key", ValueType::String))
         .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
         .with_output(Port::new("value", "Value", ValueType::Any))
         .with_config_schema(serde_json::json!({
@@ -240,8 +244,8 @@ fn create_read_storage_node() -> NodeDefinition {
 fn create_write_storage_node() -> NodeDefinition {
     NodeDefinition::new("WriteStorage", "Write Storage", "Writes a value to contract storage", "State")
         .with_input(Port::new("flow_in", "Flow In", ValueType::Flow).required())
-        .with_input(Port::new("key", "Key", ValueType::String).required())
-        .with_input(Port::new("value", "Value", ValueType::Any).required())
+        .with_input(Port::new("key", "Key", ValueType::String))
+        .with_input(Port::new("value", "Value", ValueType::Any))
         .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
         .with_config_schema(serde_json::json!({
             "type": "object",
@@ -346,5 +350,61 @@ fn create_end_node() -> NodeDefinition {
             expression_field: None,
             gas_cost: Some(0),
             optimizable: false,
+        })
+}
+
+fn create_verify_signature_node() -> NodeDefinition {
+    NodeDefinition::new("VerifySignature", "Verify Signature",
+        "Verifies an ed25519 cryptographic signature", "Crypto")
+        .with_input(Port::new("flow_in", "Flow In", ValueType::Flow).required())
+        .with_input(Port::new("message", "Message", ValueType::Bytes))
+        .with_input(Port::new("signature", "Signature", ValueType::Bytes))
+        .with_input(Port::new("public_key", "Public Key", ValueType::Bytes))
+        .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
+        .with_output(Port::new("result", "Result", ValueType::Boolean))
+        .with_config_schema(serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        }))
+        .with_compiler_hint(CompilerHint {
+            operation_type: "verify_signature".to_string(),
+            expression_field: None,
+            gas_cost: Some(100),
+            optimizable: false,
+        })
+        .with_visual(VisualProperties {
+            width: 120.0,
+            height: 80.0,
+            color: "#9B59B6".to_string(),
+            icon: Some("shield".to_string()),
+        })
+}
+
+fn create_decode_proof_node() -> NodeDefinition {
+    NodeDefinition::new("DecodeProof", "Decode Proof",
+        "Deserializes a DormancyProof JSON payload", "Crypto")
+        .with_input(Port::new("flow_in", "Flow In", ValueType::Flow).required())
+        .with_input(Port::new("proof_json", "Proof JSON", ValueType::String))
+        .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
+        .with_output(Port::new("chain_id", "Chain ID", ValueType::String))
+        .with_output(Port::new("address", "Address", ValueType::String))
+        .with_output(Port::new("dormant_since_block", "Dormant Since Block", ValueType::Integer))
+        .with_config_schema(serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "required": []
+        }))
+        .with_compiler_hint(CompilerHint {
+            operation_type: "decode_proof".to_string(),
+            expression_field: None,
+            gas_cost: Some(50),
+            optimizable: false,
+        })
+        .with_visual(VisualProperties {
+            width: 120.0,
+            height: 80.0,
+            color: "#8E44AD".to_string(),
+            icon: Some("file".to_string()),
         })
 } 

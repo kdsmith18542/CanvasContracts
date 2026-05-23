@@ -1,5 +1,7 @@
 # Visual Editor Guide
 
+> **Note:** This is a user-facing guide describing the intended UX. Some node types listed (Switch, Loop, Get Sender, Call Contract, Revert, Pause) are aspirational and not yet implemented. The actual node palette has 14 types: Start, End, If, Add/Sub/Mul/Div, And/Or/Not, ReadStorage, WriteStorage, VerifySignature, DecodeProof. See [plan.md](../../plan.md) for current capabilities.
+
 The Canvas Contracts Visual Editor is the heart of the platform, providing an intuitive drag-and-drop interface for building smart contracts. This guide covers all aspects of the editor interface and workflow.
 
 ## Editor Overview

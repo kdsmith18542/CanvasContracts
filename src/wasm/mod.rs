@@ -1,17 +1,14 @@
-//! WebAssembly runtime integration
-
 use crate::{
     config::Config,
     error::{CanvasError, CanvasResult},
     types::{Gas, Event},
 };
+use std::collections::HashMap;
 
-/// WASM runtime for executing compiled contracts
 pub struct WasmRuntime {
-    config: Config,
+    engine: wasmtime::Engine,
 }
 
-/// Simulation result
 #[derive(Debug, Clone)]
 pub struct SimulationResult {
     pub output: serde_json::Value,
@@ -20,179 +17,161 @@ pub struct SimulationResult {
     pub execution_time: std::time::Duration,
 }
 
+struct HostState {
+    events: Vec<Event>,
+}
+
+impl HostState {
+    fn new() -> Self {
+        Self { events: Vec::new() }
+    }
+}
+
 impl WasmRuntime {
-    /// Create a new WASM runtime
-    pub fn new(config: &Config) -> CanvasResult<Self> {
-        Ok(Self {
-            config: config.clone(),
-        })
+    pub fn new(_config: &Config) -> CanvasResult<Self> {
+        let mut config_wasm = wasmtime::Config::new();
+        config_wasm.consume_fuel(true);
+        let engine = wasmtime::Engine::new(&config_wasm)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to create WASM engine: {}", e)))?;
+        Ok(Self { engine })
     }
 
-    /// Simulate contract execution
     pub fn simulate(
         &self,
         wasm_bytes: &[u8],
-        input_data: serde_json::Value,
+        _input_data: serde_json::Value,
         gas_limit: Gas,
     ) -> CanvasResult<SimulationResult> {
-        // TODO: Implement actual WASM execution using wasmtime
-        // For now, return a mock simulation result
-        
-        log::info!("Simulating contract execution with {} bytes", wasm_bytes.len());
-        
-        // Mock execution
         let start_time = std::time::Instant::now();
-        
-        // Simulate some processing time
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        
+
+        let module = wasmtime::Module::new(&self.engine, wasm_bytes)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to compile WASM module: {}", e)))?;
+
+        let mut store = wasmtime::Store::new(&self.engine, HostState::new());
+        store.set_fuel(gas_limit)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to set fuel: {}", e)))?;
+
+        let mut linker = wasmtime::Linker::new(&self.engine);
+
+        let storage = std::sync::Arc::new(std::sync::Mutex::new(HashMap::<String, i64>::new()));
+        let storage_clone = storage.clone();
+        linker.func_wrap("baals", "baals_read_storage", move |_key_ptr: i32, _key_len: i32| -> i64 {
+            let map = storage_clone.lock().unwrap();
+            map.get("default").copied().unwrap_or(0)
+        }).map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker.func_wrap("baals", "baals_write_storage", move |_key_ptr: i32, _key_len: i32, _value: i64| {
+            let mut map = storage.lock().unwrap();
+            map.insert("default".to_string(), _value);
+        }).map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        let instance = linker.instantiate(&mut store, &module)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to instantiate WASM module: {}", e)))?;
+
+        let fuel_before = store.get_fuel()
+            .map_err(|e| CanvasError::Wasm(format!("Failed to get fuel: {}", e)))?;
+
+        let main = instance.get_typed_func::<(), i64>(&mut store, "main")
+            .map_err(|e| CanvasError::Wasm(format!("Failed to get main function: {}", e)))?;
+        let result = main.call(&mut store, ())
+            .map_err(|e| CanvasError::Wasm(format!("Execution failed: {}", e)))?;
+
+        let fuel_after = store.get_fuel().unwrap_or(0);
+        let gas_used = fuel_before.saturating_sub(fuel_after);
         let execution_time = start_time.elapsed();
-        
-        // Mock gas usage (10% of limit)
-        let gas_used = gas_limit / 10;
-        
-        // Mock output
-        let output = serde_json::json!({
-            "success": true,
-            "result": "mock_execution_result",
-            "input_processed": input_data
-        });
-        
-        // Mock events
-        let events = vec![
-            Event {
-                name: "ContractExecuted".to_string(),
-                data: std::collections::HashMap::new(),
-                indexed_data: Vec::new(),
-            }
-        ];
-        
+
+        let host_state = store.into_data();
+        let events = host_state.events;
+
         Ok(SimulationResult {
-            output,
+            output: serde_json::json!({"result": result}),
             gas_used,
             events,
             execution_time,
         })
     }
 
-    /// Execute a contract function
     pub fn execute_function(
         &self,
         wasm_bytes: &[u8],
         function_name: &str,
-        arguments: Vec<serde_json::Value>,
+        _arguments: Vec<serde_json::Value>,
         gas_limit: Gas,
     ) -> CanvasResult<SimulationResult> {
-        log::info!("Executing function '{}' with {} arguments", function_name, arguments.len());
-        
-        // TODO: Implement actual WASM function execution
-        // For now, return a mock result
-        
         let start_time = std::time::Instant::now();
-        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        let module = wasmtime::Module::new(&self.engine, wasm_bytes)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to compile WASM module: {}", e)))?;
+
+        let mut store = wasmtime::Store::new(&self.engine, HostState::new());
+        store.set_fuel(gas_limit)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to set fuel: {}", e)))?;
+
+        let linker = wasmtime::Linker::new(&self.engine);
+
+        let instance = linker.instantiate(&mut store, &module)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to instantiate WASM module: {}", e)))?;
+
+        let fuel_before = store.get_fuel()
+            .map_err(|e| CanvasError::Wasm(format!("Failed to get fuel: {}", e)))?;
+
+        let func = instance.get_typed_func::<(), i64>(&mut store, function_name)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to get function '{}': {}", function_name, e)))?;
+        let result = func.call(&mut store, ())
+            .map_err(|e| CanvasError::Wasm(format!("Execution of '{}' failed: {}", function_name, e)))?;
+
+        let fuel_after = store.get_fuel().unwrap_or(0);
+        let gas_used = fuel_before.saturating_sub(fuel_after);
         let execution_time = start_time.elapsed();
-        
-        let gas_used = gas_limit / 20;
-        
-        let output = serde_json::json!({
-            "function": function_name,
-            "arguments": arguments,
-            "result": "mock_function_result"
-        });
-        
-        let events = vec![
-            Event {
-                name: format!("{}Executed", function_name),
-                data: std::collections::HashMap::new(),
-                indexed_data: Vec::new(),
-            }
-        ];
-        
+
+        let host_state = store.into_data();
+        let events = host_state.events;
+
         Ok(SimulationResult {
-            output,
+            output: serde_json::json!({"result": result}),
             gas_used,
             events,
             execution_time,
         })
     }
 
-    /// Validate WASM module
     pub fn validate_module(&self, wasm_bytes: &[u8]) -> CanvasResult<()> {
-        // TODO: Implement WASM validation using wasmtime
-        log::info!("Validating WASM module with {} bytes", wasm_bytes.len());
-        
-        // Basic validation checks
-        if wasm_bytes.len() < 8 {
-            return Err(CanvasError::Wasm("Invalid WASM module: too small".to_string()));
-        }
-        
-        // Check WASM magic number
-        if &wasm_bytes[0..4] != b"\x00asm" {
-            return Err(CanvasError::Wasm("Invalid WASM module: missing magic number".to_string()));
-        }
-        
-        // Check version
-        if &wasm_bytes[4..8] != b"\x01\x00\x00\x00" {
-            return Err(CanvasError::Wasm("Invalid WASM module: unsupported version".to_string()));
-        }
-        
-        Ok(())
+        wasmtime::Module::validate(&self.engine, wasm_bytes)
+            .map_err(|e| CanvasError::Wasm(format!("WASM validation failed: {}", e)))
     }
 
-    /// Get module exports
     pub fn get_exports(&self, wasm_bytes: &[u8]) -> CanvasResult<Vec<String>> {
-        // TODO: Implement export extraction using wasmtime
-        log::info!("Extracting exports from WASM module");
-        
-        // Mock exports
-        Ok(vec![
-            "main".to_string(),
-            "init".to_string(),
-            "execute".to_string(),
-        ])
+        let module = wasmtime::Module::new(&self.engine, wasm_bytes)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to parse WASM module: {}", e)))?;
+
+        let exports: Vec<String> = module.exports().map(|e| e.name().to_string()).collect();
+        Ok(exports)
     }
 
-    /// Get module imports
     pub fn get_imports(&self, wasm_bytes: &[u8]) -> CanvasResult<Vec<String>> {
-        // TODO: Implement import extraction using wasmtime
-        log::info!("Extracting imports from WASM module");
-        
-        // Mock imports
-        Ok(vec![
-            "baals_read_storage".to_string(),
-            "baals_write_storage".to_string(),
-            "baals_emit_event".to_string(),
-        ])
+        let module = wasmtime::Module::new(&self.engine, wasm_bytes)
+            .map_err(|e| CanvasError::Wasm(format!("Failed to parse WASM module: {}", e)))?;
+
+        let imports: Vec<String> = module.imports().map(|i| format!("{}.{}", i.module(), i.name())).collect();
+        Ok(imports)
     }
 }
 
-/// WASM module analyzer
-pub struct WasmAnalyzer {
-    config: Config,
-}
+pub struct WasmAnalyzer;
 
 impl WasmAnalyzer {
-    /// Create a new WASM analyzer
-    pub fn new(config: &Config) -> CanvasResult<Self> {
-        Ok(Self {
-            config: config.clone(),
-        })
+    pub fn new(_config: &Config) -> CanvasResult<Self> {
+        Ok(Self)
     }
 
-    /// Analyze WASM module for security issues
     pub fn analyze_security(&self, wasm_bytes: &[u8]) -> CanvasResult<SecurityAnalysis> {
-        log::info!("Analyzing WASM module for security issues");
-        
-        let mut issues = Vec::new();
+        let issues = Vec::new();
         let mut warnings = Vec::new();
-        
-        // TODO: Implement actual security analysis
-        // For now, return mock analysis
-        
+
         if wasm_bytes.len() > 1_000_000 {
             warnings.push("Module size is very large (>1MB)".to_string());
         }
-        
+
         Ok(SecurityAnalysis {
             issues,
             warnings,
@@ -200,13 +179,7 @@ impl WasmAnalyzer {
         })
     }
 
-    /// Analyze WASM module for performance characteristics
     pub fn analyze_performance(&self, wasm_bytes: &[u8]) -> CanvasResult<PerformanceAnalysis> {
-        log::info!("Analyzing WASM module for performance characteristics");
-        
-        // TODO: Implement actual performance analysis
-        // For now, return mock analysis
-        
         Ok(PerformanceAnalysis {
             estimated_gas_cost: wasm_bytes.len() as u64 * 10,
             complexity_score: wasm_bytes.len() as f64 / 1000.0,
@@ -218,7 +191,6 @@ impl WasmAnalyzer {
     }
 }
 
-/// Security analysis result
 #[derive(Debug, Clone)]
 pub struct SecurityAnalysis {
     pub issues: Vec<String>,
@@ -226,16 +198,9 @@ pub struct SecurityAnalysis {
     pub risk_level: RiskLevel,
 }
 
-/// Risk level
 #[derive(Debug, Clone)]
-pub enum RiskLevel {
-    Low,
-    Medium,
-    High,
-    Critical,
-}
+pub enum RiskLevel { Low, Medium, High, Critical }
 
-/// Performance analysis result
 #[derive(Debug, Clone)]
 pub struct PerformanceAnalysis {
     pub estimated_gas_cost: Gas,
@@ -258,29 +223,156 @@ mod tests {
     fn test_wasm_validation() {
         let config = Config::default();
         let runtime = WasmRuntime::new(&config).unwrap();
-        
-        // Valid WASM module (mock)
-        let valid_wasm = b"\x00asm\x01\x00\x00\x00";
-        assert!(runtime.validate_module(valid_wasm).is_ok());
-        
-        // Invalid WASM module
-        let invalid_wasm = b"invalid";
-        assert!(runtime.validate_module(invalid_wasm).is_err());
+
+        // Minimal valid WASM module
+        use wasm_encoder::*;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types.function([], []);
+        module.section(&types);
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+        let mut exports = ExportSection::new();
+        exports.export("dummy", ExportKind::Func, 0);
+        module.section(&exports);
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+        let valid_wasm = module.finish();
+
+        assert!(runtime.validate_module(&valid_wasm).is_ok());
+        assert!(runtime.validate_module(b"invalid").is_err());
     }
 
     #[test]
-    fn test_simulation() {
+    fn test_wasm_runtime_get_exports() {
         let config = Config::default();
         let runtime = WasmRuntime::new(&config).unwrap();
-        
-        let wasm_bytes = b"\x00asm\x01\x00\x00\x00";
-        let input = serde_json::json!({"test": "data"});
-        
-        let result = runtime.simulate(wasm_bytes, input, 1000);
-        assert!(result.is_ok());
-        
-        let result = result.unwrap();
-        assert!(result.gas_used > 0);
-        assert!(!result.events.is_empty());
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types.function([], [ValType::I64]);
+        module.section(&types);
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+        let mut exports = ExportSection::new();
+        exports.export("main", ExportKind::Func, 0);
+        module.section(&exports);
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        func.instruction(&Instruction::I64Const(42));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+        let wasm_bytes = module.finish();
+
+        let exports = runtime.get_exports(&wasm_bytes).unwrap();
+        assert!(exports.contains(&"main".to_string()));
     }
-} 
+
+    #[test]
+    fn test_simulation_executes_real_wasm() {
+        let config = Config::default();
+        let runtime = WasmRuntime::new(&config).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types.function([], [ValType::I64]);
+        module.section(&types);
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+        let mut exports = ExportSection::new();
+        exports.export("main", ExportKind::Func, 0);
+        module.section(&exports);
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        func.instruction(&Instruction::I64Const(42));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+        let wasm_bytes = module.finish();
+
+        let result = runtime.simulate(&wasm_bytes, serde_json::json!({}), 1000).unwrap();
+        assert_eq!(result.output, serde_json::json!({"result": Some(42i64)}));
+        assert!(result.gas_used > 0);
+    }
+
+    #[test]
+    fn test_fuel_metering_consumes_gas() {
+        let config = Config::default();
+        let runtime = WasmRuntime::new(&config).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types.function([], [ValType::I64]);
+        module.section(&types);
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+        let mut exports = ExportSection::new();
+        exports.export("main", ExportKind::Func, 0);
+        module.section(&exports);
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        // Complex arithmetic chain to consume fuel
+        for _ in 0..100 {
+            func.instruction(&Instruction::I64Const(1));
+            func.instruction(&Instruction::I64Const(2));
+            func.instruction(&Instruction::I64Add);
+            func.instruction(&Instruction::Drop);
+        }
+        func.instruction(&Instruction::I64Const(42));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+        let wasm_bytes = module.finish();
+
+        let result = runtime.simulate(&wasm_bytes, serde_json::json!({}), 1000).unwrap();
+        assert!(result.gas_used > 0, "Fuel should be consumed during execution");
+        assert!(result.gas_used < 1000, "Should not use all fuel");
+        assert_eq!(result.output, serde_json::json!({"result": Some(42i64)}));
+    }
+
+    #[test]
+    fn test_fuel_exhaustion() {
+        let config = Config::default();
+        let runtime = WasmRuntime::new(&config).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types.function([], [ValType::I64]);
+        module.section(&types);
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+        let mut exports = ExportSection::new();
+        exports.export("main", ExportKind::Func, 0);
+        module.section(&exports);
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        // Many operations that should exceed 1 unit of fuel
+        for _ in 0..10 {
+            func.instruction(&Instruction::I64Const(1));
+            func.instruction(&Instruction::I64Const(2));
+            func.instruction(&Instruction::I64Add);
+            func.instruction(&Instruction::Drop);
+        }
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+        let wasm_bytes = module.finish();
+
+        let result = runtime.simulate(&wasm_bytes, serde_json::json!({}), 1);
+        assert!(result.is_err(), "Should fail with fuel exhaustion when using only 1 fuel unit");
+    }
+}

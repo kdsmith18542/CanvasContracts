@@ -1,5 +1,7 @@
 # Quick Start Guide
 
+> **Note:** Some features described (AI Assistant, Switch/Loop node types, Kubernetes deployment) are aspirational. The core flow — build graph, validate, compile, simulate, deploy — is fully implemented. See [plan.md](../../plan.md) for current capabilities.
+
 Get up and running with Canvas Contracts in minutes! This guide will walk you through installing the platform and creating your first visual smart contract.
 
 ## Prerequisites

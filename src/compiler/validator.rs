@@ -2,23 +2,19 @@
 
 use crate::{
     config::Config,
-    error::{CanvasError, CanvasResult},
-    types::{VisualGraph, VisualNode, Connection, ValueType},
+    error::CanvasResult,
+    types::{VisualGraph, VisualNode, Connection},
 };
 
 use super::ValidationResult;
 
 /// Graph validator
-pub struct Validator {
-    config: Config,
-}
+pub struct Validator;
 
 impl Validator {
     /// Create a new validator
-    pub fn new(config: &Config) -> CanvasResult<Self> {
-        Ok(Self {
-            config: config.clone(),
-        })
+    pub fn new(_config: &Config) -> CanvasResult<Self> {
+        Ok(Self)
     }
 
     /// Validate a visual graph
@@ -95,6 +91,8 @@ impl Validator {
             "And" | "Or" | "Not" => {}
             // Control flow nodes — no required properties
             "Start" | "End" => {}
+            // Crypto nodes
+            "VerifySignature" | "DecodeProof" => {}
             _ => {
                 // Truly unknown node type
                 *result = result.clone().with_warning(format!(
@@ -161,10 +159,10 @@ impl Validator {
         // Check type compatibility
         if !source_port.value_type.is_compatible_with(&target_port.value_type) {
             *result = result.clone().with_error(format!(
-                "Type mismatch in connection {}: {} -> {}",
+                "Type mismatch in connection {}: {:?} -> {:?}",
                 connection.id,
-                format!("{:?}", source_port.value_type),
-                format!("{:?}", target_port.value_type)
+                source_port.value_type,
+                target_port.value_type,
             ));
         }
     }
@@ -230,7 +228,7 @@ impl Validator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{VisualNode, Position, Port, ValueType};
+    use crate::types::{VisualNode, Position};
     use uuid::Uuid;
 
     #[test]

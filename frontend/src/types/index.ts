@@ -4,6 +4,7 @@ export interface VisualNode {
     position: { x: number; y: number }
     data: {
         label: string
+        nodeType?: string
         properties?: Record<string, any>
     }
 }
@@ -22,50 +23,29 @@ export interface VisualGraph {
 }
 
 export interface NodeDefinition {
-    type: string
+    id: string
     name: string
     description: string
     category: string
-    inputs: NodePort[]
-    outputs: NodePort[]
-    properties: NodeProperty[]
+    inputs: PortInfo[]
+    outputs: PortInfo[]
 }
 
-export interface NodePort {
+export interface PortInfo {
     name: string
-    type: 'Flow' | 'Boolean' | 'Number' | 'String' | 'Bytes'
+    value_type: string
     required: boolean
-}
-
-export interface NodeProperty {
-    name: string
-    type: 'string' | 'number' | 'boolean'
-    description: string
-    required: boolean
-    default?: any
 }
 
 export interface CompilationResult {
     success: boolean
-    wasm_bytes: Uint8Array
-    gas_estimate: number
-    error?: string
+    wasm_size?: number
+    gas_estimate?: number
+    error?: string | null
 }
 
 export interface ValidationResult {
-    valid: boolean
-    errors: ValidationError[]
-    warnings: ValidationWarning[]
+    is_valid: boolean
+    errors: string[]
+    warnings: string[]
 }
-
-export interface ValidationError {
-    node_id: string
-    message: string
-    severity: 'error' | 'warning'
-}
-
-export interface ValidationWarning {
-    node_id: string
-    message: string
-    suggestion?: string
-} 

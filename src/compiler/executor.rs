@@ -128,9 +128,7 @@ impl GraphExecutor {
                             if let Some(v_node) = graph.get_node(node_id) {
                                 for port in &v_node.outputs {
                                     if port.value_type == ValueType::Flow {
-                                        if !node_outputs.contains_key(&(node_id, port.id.clone())) {
-                                            node_outputs.insert((node_id, port.id.clone()), serde_json::Value::Bool(true));
-                                        }
+                                        node_outputs.entry((node_id, port.id.clone())).or_insert(serde_json::Value::Bool(true));
                                     }
                                 }
                             }

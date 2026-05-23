@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::{
     error::{CanvasError, CanvasResult},
-    types::{ExecutionContext, NodeResult, PortId, ValueType},
+    types::{ExecutionContext, PortId},
 };
 
 pub use definitions::{NodeDefinition, builtin_node_definitions};
@@ -40,7 +40,7 @@ impl NodeContext {
     pub fn use_gas(&mut self, amount: u64) -> CanvasResult<()> {
         self.execution_context
             .use_gas(amount)
-            .map_err(|e| CanvasError::Validation(e))
+            .map_err(CanvasError::Validation)
     }
 
     pub fn emit_event(&mut self, name: String, data: std::collections::HashMap<String, serde_json::Value>) {

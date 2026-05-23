@@ -1,136 +1,61 @@
 # Canvas Contracts Documentation
 
-Welcome to the Canvas Contracts documentation! This comprehensive guide covers everything you need to know about building, deploying, and managing visual smart contracts.
+Welcome to the Canvas Contracts documentation!
+
+> **Current release state (2026-05-23):** All core features implemented — graph validation, real WASM compilation, wasmtime runtime, BaaLS integration, 14 node types, frontend visual editor. 75 tests pass. See [plan.md](../plan.md) for full development status.
 
 ## Table of Contents
 
 ### Getting Started
-- [Quick Start Guide](getting-started/quick-start.md)
-- [Installation](getting-started/installation.md)
-- [First Contract](getting-started/first-contract.md)
-- [Architecture Overview](getting-started/architecture.md)
+- [Quick Start Guide](getting-started/quick-start.md) — Install and build your first contract
+- [Architecture Spec](canvascontracts.md) — Original technical specification
 
 ### User Guide
-- [Visual Editor](user-guide/visual-editor.md)
-- [Node Types](user-guide/node-types.md)
-- [Custom Nodes](user-guide/custom-nodes.md)
-- [AI Assistant](user-guide/ai-assistant.md)
-- [Debugging](user-guide/debugging.md)
-- [Testing](user-guide/testing.md)
+- [Visual Editor](user-guide/visual-editor.md) — Interface and workflow guide
+
+### CLI Reference
+- [CLI Commands](reference/cli.md) — Available `canvas-contracts` commands
 
 ### Development
-- [API Reference](api/README.md)
-- [SDK Guide](development/sdk.md)
-- [Plugin Development](development/plugins.md)
-- [Custom Templates](development/templates.md)
+- [API Reference](api/README.md) — Library API documentation *(aspirational, predates implementation)*
+- [Plan](../plan.md) — Current development plan and milestone status
+- [Agent Context](../agents.md) — Quick reference for contributors
 
 ### Deployment
-- [Deployment Guide](deployment/README.md)
-- [Production Setup](deployment/production.md)
-- [Monitoring](deployment/monitoring.md)
-- [Scaling](deployment/scaling.md)
-
-### Reference
-- [Configuration](reference/configuration.md)
-- [CLI Commands](reference/cli.md)
-- [Error Codes](reference/errors.md)
-- [Best Practices](reference/best-practices.md)
+- [Deployment Guide](deployment/README.md) — Production deployment *(aspirational — deployment module is feature-gated, not yet implemented)*
 
 ## What is Canvas Contracts?
 
-Canvas Contracts is a visual smart contract development platform that allows you to build, test, and deploy smart contracts using a drag-and-drop interface. Built on the BaaLS blockchain engine, it provides:
+Canvas Contracts is a visual smart contract development platform. Users compose directed graphs of pre-built nodes that compile to WASM bytecode for deployment on BaaLS.
 
-- **Visual Programming**: Create contracts by connecting nodes on a canvas
-- **WASM Compilation**: Automatic compilation to WebAssembly for efficient execution
-- **AI Assistance**: Intelligent suggestions and optimization recommendations
-- **Advanced Debugging**: Step-through debugging with breakpoints and variable inspection
-- **Production Deployment**: Blue-green deployments, canary releases, and auto-scaling
-- **Comprehensive Monitoring**: Metrics, health checks, and performance analysis
-
-## Key Features
-
-### Visual Contract Development
-- Drag-and-drop interface for building smart contracts
-- Pre-built node library for common operations
-- Real-time validation and error checking
-- Visual debugging with execution tracing
-
-### AI-Powered Assistance
-- Pattern recognition for common contract types
-- Security analysis and vulnerability detection
-- Gas optimization suggestions
-- Intelligent node recommendations
-
-### Production-Ready Deployment
-- Blue-green deployment strategies
-- Canary releases with traffic splitting
-- Auto-scaling based on metrics
-- Comprehensive monitoring and alerting
-
-### Developer Tools
-- SDK for custom integrations
-- Plugin system for extensibility
-- Marketplace for sharing components
-- CLI tools for automation
+| Feature | Status |
+|---------|--------|
+| Visual graph editor | ✅ Drag-and-drop canvas + PropertyPanel |
+| Node types | ✅ 14 (arithmetic, logic, storage, control, crypto) |
+| Graph validation | ✅ Cycle detection, type checking, reachability |
+| Graph simulation | ✅ Toposort data-flow execution |
+| WASM compilation | ✅ `wasm-encoder` + wasmtime validation |
+| WASM runtime | ✅ Sandboxed execution + fuel metering |
+| BaaLS integration | ✅ Trait + Mock + HTTP client + Ed25519 signing |
+| Frontend | ✅ Toolbar, undo/redo, save/load, deploy, ContractMonitor |
+| Debugger | ✅ Breakpoints, step-through |
+| Dormancy Oracle | ✅ Validates and simulates end-to-end |
+| AI assistant | ⚠️ Feature-gated, not yet un-gated |
+| Deployment (blue-green, scaling) | ⚠️ Feature-gated, not yet implemented |
 
 ## Quick Start
 
-1. **Install Canvas Contracts**
-   ```bash
-   git clone https://github.com/kdsmith18542/CanvasContracts
-   cd CanvasContracts
-   make install
-   ```
+```bash
+# Build and test
+cargo build           # 0 errors, 0 warnings
+cargo test            # 75 tests pass
 
-2. **Start the Visual Editor**
-   ```bash
-   canvas-contracts editor
-   ```
+# CLI
+canvas-contracts validate --input graph.json
+canvas-contracts simulate --graph tests/fixtures/simple_arithmetic.json
+canvas-contracts compile --input graph.json --output out.wasm
+canvas-contracts deploy --contract out.wasm --key my-key --args '{}'
 
-3. **Create Your First Contract**
-   - Open the visual editor
-   - Drag nodes from the palette to the canvas
-   - Connect nodes to define the contract logic
-   - Use the AI assistant for optimization suggestions
-   - Test and deploy your contract
-
-## Architecture
-
-Canvas Contracts is built with a modular architecture:
-
+# Frontend (needs libsoup-2.4 on Linux)
+cd frontend && npm install && npm run dev
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Visual Editor │    │   Compiler      │    │   BaaLS Engine  │
-│   (Tauri/React) │───▶│   (Rust)        │───▶│   (Blockchain)  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   AI Assistant  │    │   WASM Runtime  │    │   Monitoring    │
-│   (Patterns)    │    │   (wasmtime)    │    │   (Metrics)     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
-
-- Code of Conduct
-- Development Setup
-- Pull Request Process
-- Testing Guidelines
-
-## Support
-
-- **Documentation**: This site
-- **Issues**: [GitHub Issues](https://github.com/kdsmith18542/CanvasContracts/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/kdsmith18542/CanvasContracts/discussions)
-- **Community**: [Discord Server](https://discord.gg/canvascontracts)
-
-## License
-
-Canvas Contracts is licensed under the MIT License. See [LICENSE](../LICENSE) for details.
-
----
-
-**Ready to get started?** Check out our [Quick Start Guide](getting-started/quick-start.md) to build your first visual smart contract! 

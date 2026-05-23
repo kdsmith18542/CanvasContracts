@@ -2,214 +2,113 @@
 
 **Paint Your Logic. Deploy Your Future.**
 
-Canvas Contracts is a visual smart contract development platform that allows developers to build, test, and deploy WebAssembly (WASM) smart contracts using an intuitive drag-and-drop interface. Built on top of the BaaLS (Blockchain as a Local Service) engine, it provides a seamless development experience for both beginners and experienced blockchain developers.
+Canvas Contracts is a visual smart contract development platform. Users compose directed graphs of pre-built nodes (arithmetic, conditionals, storage ops, crypto) that compile to WASM bytecode for deployment on BaaLS.
 
-## 🎨 Features
+> **Development status**: All core features implemented — graph validation, execution, real WASM compilation, wasmtime runtime, BaaLS integration, 14 node types, full frontend. 75 tests pass, 0 warnings.
 
-- **Visual Contract Builder**: Drag-and-drop interface for creating smart contracts
-- **Multi-Language Support**: Write custom logic in Rust, Go, AssemblyScript, or F#
-- **WASM Compilation**: Automatic compilation of visual graphs to optimized WASM modules
-- **Local Simulation**: Built-in sandbox for testing contracts before deployment
-- **BaaLS Integration**: Seamless integration with the BaaLS blockchain engine
-- **Real-time Validation**: AI-powered suggestions and security checks
-- **Cross-Platform**: Desktop application built with Tauri
+## What Works
 
-## 🚀 Quick Start
+- **Visual graph editor**: Drag-and-drop canvas (`@xyflow/react` + Tauri desktop app)
+- **14 node types**: Arithmetic (Add/Sub/Mul/Div), Logic (And/Or/Not/If), Storage (Read/Write), Control (Start/End), Crypto (VerifySignature/DecodeProof)
+- **Graph validation**: Cycle detection, port type checking, reachability analysis — 14 types handled
+- **Graph simulation**: Execute graphs via toposort data-flow engine — test logic without deploying
+- **Real WASM compilation**: `wasm-encoder` produces valid, input-dependent WASM bytecode; wasmtime-validated
+- **Wasmtime runtime**: Sandboxed execution with fuel-based gas metering; host functions for BaaLS storage
+- **BaaLS integration**: `BaalsClient` trait with Mock + HTTP client (real BaaLS REST API); Ed25519 signing
+- **Frontend**: Toolbar (compile/validate/simulate/deploy) all wired; PropertyPanel; undo/redo; save/load; ContractMonitor
+- **Debugger**: Breakpoints, step-through, wired to GraphExecutor
+- **DormancyOracle**: Resurgence Protocol oracle graph validates and simulates end-to-end
+
+## Quick Start
 
 ### Prerequisites
 
 - **Rust** (latest stable)
 - **Node.js** (v18+)
-- **wasm-pack** for WASM compilation
-- **wasmtime** for local execution
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/kdsmith18542/CanvasContracts.git
-   cd CanvasContracts
-   ```
-
-2. **Install all dependencies**
-   ```bash
-   make install
-   ```
-
-3. **Build the application**
-   ```bash
-   make build-app
-   ```
-
-4. **Start the development server**
-   ```bash
-   make run-app
-   ```
-
-## 🏗️ Architecture
-
-Canvas Contracts consists of several key components:
-
-### Frontend (React + Tauri)
-- **Visual Editor**: Drag-and-drop interface for building contracts
-- **Node Palette**: Library of pre-built contract components
-- **Property Panel**: Configuration interface for nodes
-- **Debugger**: Real-time execution tracing and state inspection
-
-### Backend (Rust)
-- **Contract Compiler**: Converts visual graphs to WASM bytecode
-- **Node Definition Language (NDL)**: Schema for defining new node types
-- **BaaLS SDK Integration**: Direct integration with the BaaLS engine
-- **WASM Runtime**: Local execution environment using wasmtime
-
-### AI Assistant (Non-LLM)
-- **Pattern Recognition**: Identifies common contract patterns
-- **Security Validation**: Rule-based security checks
-- **Optimization Suggestions**: Gas optimization recommendations
-- **Test Generation**: Automated test case generation
-
-## 📚 Documentation
-
-- [User Guide](docs/user-guide.md) - How to use Canvas Contracts
-- [Developer Guide](docs/developer-guide.md) - Contributing to the project
-- [API Reference](docs/api-reference.md) - Technical documentation
-- [Architecture](docs/architecture.md) - System design and components
-
-## 🧪 Testing
-
-### Run Tests
 ```bash
-# Rust tests
-make test
-
-# Frontend tests
-cd frontend && npm test
-
-# Integration tests
-npm run test:integration
+git clone https://github.com/kdsmith18542/CanvasContracts.git
+cd CanvasContracts
+make install
 ```
 
-### Code Quality
-```bash
-# Format code
-make fmt
+### Development
 
-# Lint code
-make lint
+```bash
+# Backend
+cargo build           # 0 errors, 0 warnings
+cargo test            # 75 tests pass
+
+# CLI
+canvas-contracts validate --input graph.json
+canvas-contracts simulate --graph tests/fixtures/simple_arithmetic.json
+canvas-contracts compile --input graph.json --output out.wasm
+canvas-contracts deploy --contract out.wasm --key my-key --args '{}'
+
+# Frontend
+cd frontend
+npm install
+npm run dev           # Vite dev server
+npm run tauri dev     # Tauri desktop app (needs libsoup-2.4 on Linux)
 ```
 
-## 🔧 Development
+## Architecture
 
-### Development Environment
-
-- **Rust toolchain**: See `rust-toolchain.toml` (run `rustup show` to check)
-- **VSCode**: Recommended (see `.vscode/extensions.json`)
-- **.env**: Copy `.env.example` to `.env` and fill in values as needed
-
-### Development Commands
-
-#### Backend (Rust)
-- `make build` - Build the entire workspace
-- `make test` - Run all tests
-- `make lint` - Run clippy linter
-- `make fmt` - Format code with rustfmt
-- `make clean` - Clean build artifacts
-- `make run` - Run CLI only
-
-#### Frontend (React + Tauri)
-- `make frontend-install` - Install frontend dependencies
-- `make frontend-dev` - Start frontend development server
-- `make frontend-build` - Build frontend
-- `make tauri-dev` - Start Tauri development
-- `make tauri-build` - Build Tauri application
-
-#### Full Application
-- `make install` - Install all dependencies
-- `make build-app` - Build full application
-- `make run-app` - Run full Tauri application
-
-### Project Structure
 ```
 canvascontract/
-├── src/                    # Rust backend source
-│   ├── compiler/          # Contract compilation engine
-│   ├── nodes/             # Node definitions and implementations
-│   ├── wasm/              # WASM runtime integration
-│   └── baals/             # BaaLS SDK integration
-├── frontend/              # React frontend application
-│   ├── src/
-│   │   ├── components/    # React components
-│   │   ├── hooks/         # Custom React hooks
-│   │   ├── utils/         # Utility functions
-│   │   └── types/         # TypeScript type definitions
-│   └── public/            # Static assets
-├── contracts/             # Example contracts and templates
-├── docs/                  # Documentation
-└── tests/                 # Test suites
+├── src/                       # Rust backend
+│   ├── compiler/              # graph → IR → AST → WASM → wasmtime validation
+│   ├── nodes/                 # 14 node definitions + implementations
+│   ├── wasm/                  # Real wasmtime runtime (fuel metering)
+│   ├── baals/                 # BaalsClient trait, Mock + HTTP client
+│   └── debugger/              # Breakpoint debugger
+├── frontend/                  # React + Tauri
+│   └── src/
+│       ├── components/        # CanvasEditor, NodePalette, Toolbar, PropertyPanel, etc.
+│       ├── store/             # Zustand with undo/redo
+│       └── services/          # TauriService, ProjectService
+└── tests/
+    ├── fixtures/              # 6 graph JSON fixtures (incl. DormancyOracle)
+    ├── executor_tests.rs      # 3 integration tests
+    └── graph_tests.rs         # 9 fixture-based tests
 ```
 
-### Adding New Node Types
+## Node Types
 
-1. **Define the node in NDL** (`src/nodes/definitions/`)
-2. **Implement the node logic** (`src/nodes/implementations/`)
-3. **Add visual representation** (`frontend/src/components/nodes/`)
-4. **Write tests** (`tests/nodes/`)
+| Node | Category | Gas | Description |
+|------|----------|-----|-------------|
+| Start | Control | 0 | Entry point |
+| End | Control | 0 | Exit point |
+| Add/Sub/Mul/Div | Arithmetic | 3-5 | i64 arithmetic |
+| And/Or/Not | Logic | 1-3 | Boolean logic |
+| If | Logic | 10 | Conditional branch |
+| ReadStorage | State | 100 | Read from contract KV state |
+| WriteStorage | State | 200 | Write to contract KV state |
+| VerifySignature | Crypto | 100 | Ed25519 signature verification |
+| DecodeProof | Crypto | 50 | JSON proof deserialization |
 
-### Building Custom WASM Modules
+## Documentation
 
-```rust
-// Example custom node implementation
-use canvas_contracts::node::{Node, NodeContext};
+- [Plan](plan.md) — Development plan and milestones
+- [Agents](agents.md) — Quick reference for contributors
+- [Spec](docs/canvascontracts.md) — Original technical specification
 
-pub struct CustomNode {
-    // Node properties
-}
+## Testing
 
-impl Node for CustomNode {
-    fn execute(&self, context: &mut NodeContext) -> Result<(), Box<dyn std::error::Error>> {
-        // Custom logic here
-        Ok(())
-    }
-}
+```bash
+# Rust (75 tests, 0 failures)
+cargo test
+
+# Frontend type check
+cd frontend && npx tsc --noEmit
 ```
 
-## 🤝 Contributing
+## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [agents.md](agents.md) for development context.
 
-### Development Workflow
+## License
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a pull request
-
-### Code Style
-
-- **Rust**: Follow the [Rust Style Guide](https://doc.rust-lang.org/1.0.0/style/style/naming/README.html)
-- **TypeScript/JavaScript**: Use ESLint and Prettier configurations
-- **Commits**: Use conventional commit messages
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **BaaLS Team** - For the foundational blockchain engine
-- **WASM Community** - For the WebAssembly ecosystem
-- **React Flow** - For the visual programming framework
-- **wasmtime** - For the WASM runtime
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/kdsmith18542/CanvasContracts/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/kdsmith18542/CanvasContracts/discussions)
-- **Documentation**: [Project Wiki](https://github.com/kdsmith18542/CanvasContracts/wiki)
-
-## 🔗 Links
-
-- **Website**: [canvascontracts.com](https://canvascontracts.com)
-- **Documentation**: [docs.canvascontracts.com](https://docs.canvascontracts.com) 
+MIT — see [LICENSE](LICENSE).

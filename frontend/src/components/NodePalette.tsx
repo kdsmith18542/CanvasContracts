@@ -126,9 +126,9 @@ const nodeCategories: NodeCategory[] = [
 ]
 
 export const NodePalette: React.FC = () => {
-    const handleNodeDrag = (nodeType: string) => {
-        // TODO: Implement drag and drop
-        console.log('Dragging node:', nodeType)
+    const handleNodeDrag = (nodeType: string, event: React.DragEvent) => {
+        event.dataTransfer.setData('application/reactflow', nodeType)
+        event.dataTransfer.effectAllowed = 'move'
     }
 
     return (
@@ -153,7 +153,7 @@ export const NodePalette: React.FC = () => {
                                 <div
                                     key={node.type}
                                     draggable
-                                    onDragStart={() => handleNodeDrag(node.type)}
+                                    onDragStart={(e) => handleNodeDrag(node.type, e)}
                                     className="flex items-center p-2 text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-md cursor-move hover:bg-gray-100"
                                 >
                                     {node.icon}

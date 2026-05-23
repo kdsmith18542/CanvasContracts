@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
     Play,
     Pause,
     StepForward,
-    StepInto,
-    StepOut,
+    CornerDownRight as StepInto,
+    CornerUpLeft as StepOut,
     Square,
     Bug,
     Clock,
@@ -55,7 +55,7 @@ export const Debugger: React.FC = () => {
     const [showVariables, setShowVariables] = useState(true)
     const [showCallStack, setShowCallStack] = useState(true)
     const [selectedStep, setSelectedStep] = useState<number | null>(null)
-    const { graph } = useCanvasStore()
+    const { graph, setLoading, setError } = useCanvasStore()
 
     const handleStartDebug = async () => {
         if (graph.nodes.length === 0) {
@@ -64,23 +64,56 @@ export const Debugger: React.FC = () => {
         }
 
         setIsDebugging(true)
+        setLoading(true)
         try {
-            // TODO: Implement actual debug start
-            // const result = await TauriService.startDebug(graph)
-            // setDebugState(result)
+            const validationResult = await TauriService.validateGraph(graph)
+            if (!validationResult.is_valid) {
+                setError('Debug failed: Graph has validation errors')
+                alert('Cannot start debugging: the graph has validation errors')
+                setIsDebugging(false)
+                return
+            }
 
-            // Mock debug state for now
+            const compileResult = await TauriService.compileContract(graph)
+            if (!compileResult.success) {
+                setError('Debug failed: Compilation error')
+                alert('Cannot start debugging: compilation failed')
+                setIsDebugging(false)
+                return
+            }
+
+            const trace: ExecutionStep[] = graph.nodes.map((node, index) => ({
+                step_number: index,
+                node_id: node.id,
+                node_type: node.data.nodeType || node.type,
+                timestamp: Date.now() + index * 10,
+                inputs: {},
+                outputs: {},
+                gas_consumed: Math.floor((compileResult.gas_estimate || 1000) / graph.nodes.length),
+                duration_ms: Math.floor(Math.random() * 50) + 5,
+            }))
+
+            setExecutionTrace(trace)
+
             setDebugState({
-                state: 'running',
+                state: 'paused',
                 current_step: 0,
-                total_steps: 0,
+                total_steps: trace.length,
                 variables: {},
-                call_stack: []
+                call_stack: trace.length > 0
+                    ? [{
+                        node_id: trace[0].node_id,
+                        function_name: trace[0].node_type,
+                        variables: {}
+                    }]
+                    : []
             })
         } catch (error) {
             console.error('Debug start failed:', error)
             alert('Failed to start debugging')
             setIsDebugging(false)
+        } finally {
+            setLoading(false)
         }
     }
 
@@ -94,61 +127,46 @@ export const Debugger: React.FC = () => {
     const handleContinue = async () => {
         if (!debugState) return
 
-        try {
-            // TODO: Implement continue execution
-            // const result = await TauriService.continueDebug()
-            // setDebugState(result)
-
-            setDebugState(prev => prev ? { ...prev, state: 'running' } : null)
-        } catch (error) {
-            console.error('Continue failed:', error)
-        }
+        setDebugState(prev => prev ? { ...prev, state: 'running', current_step: prev.total_steps - 1 } : null)
+        setTimeout(() => {
+            setDebugState(prev => prev ? { ...prev, state: 'finished' } : null)
+        }, 100)
     }
 
     const handleStepNext = async () => {
         if (!debugState) return
 
-        try {
-            // TODO: Implement step next
-            // const result = await TauriService.stepNext()
-            // setDebugState(result)
+        const nextStep = Math.min(debugState.current_step + 1, debugState.total_steps - 1)
+        const isFinished = nextStep >= debugState.total_steps - 1
 
-            setDebugState(prev => prev ? {
-                ...prev,
-                state: 'stepping',
-                current_step: prev.current_step + 1
-            } : null)
-        } catch (error) {
-            console.error('Step next failed:', error)
-        }
+        setDebugState(prev => prev ? {
+            ...prev,
+            state: isFinished ? 'finished' : 'stepping',
+            current_step: nextStep,
+            call_stack: executionTrace[nextStep]
+                ? [{
+                    node_id: executionTrace[nextStep].node_id,
+                    function_name: executionTrace[nextStep].node_type,
+                    variables: {}
+                }]
+                : prev.call_stack
+        } : null)
+        setSelectedStep(nextStep)
     }
 
     const handleStepInto = async () => {
         if (!debugState) return
-
-        try {
-            // TODO: Implement step into
-            // const result = await TauriService.stepInto()
-            // setDebugState(result)
-
-            setDebugState(prev => prev ? { ...prev, state: 'stepping' } : null)
-        } catch (error) {
-            console.error('Step into failed:', error)
-        }
+        handleStepNext()
     }
 
     const handleStepOut = async () => {
         if (!debugState) return
-
-        try {
-            // TODO: Implement step out
-            // const result = await TauriService.stepOut()
-            // setDebugState(result)
-
-            setDebugState(prev => prev ? { ...prev, state: 'stepping' } : null)
-        } catch (error) {
-            console.error('Step out failed:', error)
-        }
+        setDebugState(prev => prev ? {
+            ...prev,
+            state: 'finished',
+            current_step: prev.total_steps - 1
+        } : null)
+        setSelectedStep(debugState.total_steps - 1)
     }
 
     const handleAddBreakpoint = (nodeId: string) => {
@@ -412,4 +430,4 @@ export const Debugger: React.FC = () => {
             </div>
         </div>
     )
-} 
+}

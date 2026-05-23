@@ -48,6 +48,12 @@ pub struct Graph {
     pub edges: Vec<(NodeId, NodeId)>,
 }
 
+impl Default for Graph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Graph {
     pub fn new() -> Self {
         Self {
@@ -97,7 +103,7 @@ impl ValueType {
             (ValueType::Object(fields1), ValueType::Object(fields2)) => {
                 fields1.len() == fields2.len()
                     && fields1.iter().all(|(k, v)| {
-                        fields2.get(k).map_or(false, |v2| v.is_compatible_with(v2))
+                        fields2.get(k).is_some_and(|v2| v.is_compatible_with(v2))
                     })
             }
             _ => false,
@@ -455,6 +461,12 @@ pub struct ExecutionTrace {
     pub total_gas: Gas,
     pub success: bool,
     pub error: Option<String>,
+}
+
+impl Default for ExecutionTrace {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ExecutionTrace {

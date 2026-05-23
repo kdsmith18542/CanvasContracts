@@ -2,7 +2,7 @@
 
 use crate::{
     error::{CanvasError, CanvasResult},
-    types::{ExecutionContext, NodeResult, PortId},
+    types::NodeResult,
 };
 
 /// Node trait that all nodes must implement
@@ -17,13 +17,17 @@ pub trait Node: Send + Sync {
     fn name(&self) -> &str;
 }
 
+type NodeExecutor = Box<dyn Fn(&mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> + Send + Sync>;
+
+#[allow(dead_code)]
 /// Basic node implementation
 pub struct BasicNode {
     node_type: String,
     name: String,
-    executor: Box<dyn Fn(&mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> + Send + Sync>,
+    executor: NodeExecutor,
 }
 
+#[allow(dead_code)]
 impl BasicNode {
     pub fn new(
         node_type: impl Into<String>,
@@ -453,6 +457,87 @@ impl Node for NotNode {
     fn name(&self) -> &str { "Logical NOT" }
 }
 
+/// VerifySignature node — verifies ed25519 signature
+pub struct VerifySignatureNode;
+
+impl Node for VerifySignatureNode {
+    fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
+        let msg = context.get_input(&"message".to_string()).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let sig_hex = context.get_input(&"signature".to_string()).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let pk_hex = context.get_input(&"public_key".to_string()).and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+        context.use_gas(100)?;
+
+        let result = if msg.is_empty() || sig_hex.is_empty() || pk_hex.is_empty() {
+            false
+        } else {
+            match verify_ed25519(&msg, &sig_hex, &pk_hex) {
+                Ok(valid) => valid,
+                Err(e) => {
+                    log::warn!("Signature verification failed: {}", e);
+                    false
+                }
+            }
+        };
+
+        let mut outputs = std::collections::HashMap::new();
+        outputs.insert("result".to_string(), serde_json::Value::Bool(result));
+
+        Ok(NodeResult::success(outputs, 100))
+    }
+
+    fn node_type(&self) -> &str { "VerifySignature" }
+    fn name(&self) -> &str { "Verify Signature" }
+}
+
+/// Real ed25519 signature verification using ed25519-dalek
+fn verify_ed25519(message: &str, signature_hex: &str, public_key_hex: &str) -> CanvasResult<bool> {
+    use ed25519_dalek::Verifier;
+
+    let sig_bytes = hex::decode(signature_hex)
+        .map_err(|_| CanvasError::Node("Invalid signature hex".to_string()))?;
+    let pk_bytes = hex::decode(public_key_hex)
+        .map_err(|_| CanvasError::Node("Invalid public key hex".to_string()))?;
+
+    let sig = ed25519_dalek::Signature::from_slice(&sig_bytes)
+        .map_err(|e| CanvasError::Node(format!("Invalid signature bytes: {}", e)))?;
+    let pk_array: [u8; 32] = pk_bytes.as_slice()
+        .try_into()
+        .map_err(|_| CanvasError::Node("Public key must be 32 bytes".to_string()))?;
+    let pubkey = ed25519_dalek::VerifyingKey::from_bytes(&pk_array)
+        .map_err(|e| CanvasError::Node(format!("Invalid Ed25519 public key: {}", e)))?;
+
+    Ok(pubkey.verify(message.as_bytes(), &sig).is_ok())
+}
+
+/// DecodeProof node — deserializes DormancyProof JSON payload
+pub struct DecodeProofNode;
+
+impl Node for DecodeProofNode {
+    fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
+        let proof_json = context.get_input(&"proof_json".to_string()).and_then(|v| v.as_str()).unwrap_or("{}").to_string();
+
+        context.use_gas(50)?;
+
+        let decoded: serde_json::Value = serde_json::from_str(&proof_json)
+            .unwrap_or(serde_json::json!({}));
+
+        let chain_id = decoded.get("chain_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let address = decoded.get("address").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let dormant_since_block = decoded.get("dormant_since_block").and_then(|v| v.as_u64()).unwrap_or(0);
+
+        let mut outputs = std::collections::HashMap::new();
+        outputs.insert("chain_id".to_string(), serde_json::Value::String(chain_id.to_string()));
+        outputs.insert("address".to_string(), serde_json::Value::String(address.to_string()));
+        outputs.insert("dormant_since_block".to_string(), serde_json::json!(dormant_since_block));
+
+        Ok(NodeResult::success(outputs, 50))
+    }
+
+    fn node_type(&self) -> &str { "DecodeProof" }
+    fn name(&self) -> &str { "Decode Proof" }
+}
+
 /// Node factory for creating nodes by type identifier
 pub struct NodeFactory;
 
@@ -472,6 +557,8 @@ impl NodeFactory {
             "Subtract" => Ok(Box::new(SubtractNode)),
             "Multiply" => Ok(Box::new(MultiplyNode)),
             "Divide" => Ok(Box::new(DivideNode)),
+            "VerifySignature" => Ok(Box::new(VerifySignatureNode)),
+            "DecodeProof" => Ok(Box::new(DecodeProofNode)),
             "And" => Ok(Box::new(AndNode)),
             "Or" => Ok(Box::new(OrNode)),
             "Not" => Ok(Box::new(NotNode)),
@@ -644,7 +731,7 @@ mod tests {
         c.inputs.insert("a".to_string(), serde_json::json!(true));
         c.inputs.insert("b".to_string(), serde_json::json!(true));
         let r = AndNode.execute(&mut c).unwrap();
-        assert_eq!(r.outputs["result"].as_bool().unwrap(), true);
+        assert!(r.outputs["result"].as_bool().unwrap());
     }
 
     #[test]
@@ -653,7 +740,7 @@ mod tests {
         c.inputs.insert("a".to_string(), serde_json::json!(true));
         c.inputs.insert("b".to_string(), serde_json::json!(false));
         let r = AndNode.execute(&mut c).unwrap();
-        assert_eq!(r.outputs["result"].as_bool().unwrap(), false);
+        assert!(!r.outputs["result"].as_bool().unwrap());
     }
 
     #[test]
@@ -672,7 +759,7 @@ mod tests {
         c.inputs.insert("a".to_string(), serde_json::json!(false));
         c.inputs.insert("b".to_string(), serde_json::json!(false));
         let r = OrNode.execute(&mut c).unwrap();
-        assert_eq!(r.outputs["result"].as_bool().unwrap(), false);
+        assert!(!r.outputs["result"].as_bool().unwrap());
     }
 
     #[test]
@@ -681,7 +768,7 @@ mod tests {
         c.inputs.insert("a".to_string(), serde_json::json!(true));
         c.inputs.insert("b".to_string(), serde_json::json!(false));
         let r = OrNode.execute(&mut c).unwrap();
-        assert_eq!(r.outputs["result"].as_bool().unwrap(), true);
+        assert!(r.outputs["result"].as_bool().unwrap());
     }
 
     // ── Not ───────────────────────────────────────────────────────────
@@ -691,7 +778,7 @@ mod tests {
         let mut c = ctx(1000);
         c.inputs.insert("input".to_string(), serde_json::json!(true));
         let r = NotNode.execute(&mut c).unwrap();
-        assert_eq!(r.outputs["result"].as_bool().unwrap(), false);
+        assert!(!r.outputs["result"].as_bool().unwrap());
     }
 
     #[test]
@@ -699,7 +786,7 @@ mod tests {
         let mut c = ctx(1000);
         c.inputs.insert("input".to_string(), serde_json::json!(false));
         let r = NotNode.execute(&mut c).unwrap();
-        assert_eq!(r.outputs["result"].as_bool().unwrap(), true);
+        assert!(r.outputs["result"].as_bool().unwrap());
     }
 
     #[test]
@@ -761,7 +848,7 @@ mod tests {
         let types = [
             "If", "Add", "Subtract", "Multiply", "Divide",
             "And", "Or", "Not", "ReadStorage", "WriteStorage",
-            "Start", "End",
+            "Start", "End", "VerifySignature", "DecodeProof",
         ];
         for t in &types {
             let node = NodeFactory::create_node(t, &props);

@@ -34,6 +34,8 @@ interface MarketplaceItem {
     compatibility: string[]
     size_bytes: number
     hash: string
+    downloadUrl?: string
+    isFavorite?: boolean
 }
 
 interface SearchFilters {
@@ -66,12 +68,12 @@ export const Marketplace: React.FC = () => {
         const mockItems: MarketplaceItem[] = [
             {
                 id: '1',
-                name: 'ERC-20 Token Template',
-                description: 'A complete ERC-20 token implementation with transfer, approve, and mint functionality.',
-                author: 'crypto_dev',
-                version: '1.2.0',
-                item_type: 'Template',
-                tags: ['token', 'erc20', 'defi'],
+                name: 'Arithmetic Add Node',
+                description: 'Custom node for performing addition operations on two numeric inputs.',
+                author: 'canvas_team',
+                version: '1.0.0',
+                item_type: 'CustomNode',
+                tags: ['arithmetic', 'addition', 'math'],
                 rating: 4.8,
                 downloads: 1250,
                 created_at: '2024-01-15T10:00:00Z',
@@ -82,15 +84,17 @@ export const Marketplace: React.FC = () => {
                 compatibility: ['1.0.0'],
                 size_bytes: 2048,
                 hash: 'abc123',
+                downloadUrl: 'https://marketplace.canvascontracts.com/api/v1/items/1/download',
+                isFavorite: false,
             },
             {
                 id: '2',
-                name: 'Advanced Math Operations',
-                description: 'Custom node for complex mathematical operations including trigonometry and calculus.',
-                author: 'math_wizard',
+                name: 'Logic Gate Bundle',
+                description: 'Bundle of logical operation nodes: AND, OR, NOT, XOR for boolean contract conditions.',
+                author: 'logic_labs',
                 version: '2.1.0',
                 item_type: 'CustomNode',
-                tags: ['math', 'calculus', 'trigonometry'],
+                tags: ['logic', 'boolean', 'gates'],
                 rating: 4.6,
                 downloads: 890,
                 created_at: '2024-01-10T09:00:00Z',
@@ -101,15 +105,17 @@ export const Marketplace: React.FC = () => {
                 compatibility: ['1.0.0', '1.1.0'],
                 size_bytes: 4096,
                 hash: 'def456',
+                downloadUrl: 'https://marketplace.canvascontracts.com/api/v1/items/2/download',
+                isFavorite: false,
             },
             {
                 id: '3',
-                name: 'Voting System Component',
-                description: 'Complete voting system with proposal creation, voting, and result calculation.',
-                author: 'gov_expert',
+                name: 'Storage Controller',
+                description: 'Read and write contract storage nodes with access control and validation.',
+                author: 'storage_guru',
                 version: '1.0.0',
-                item_type: 'Component',
-                tags: ['governance', 'voting', 'dao'],
+                item_type: 'CustomNode',
+                tags: ['storage', 'state', 'persistence'],
                 rating: 4.9,
                 downloads: 2100,
                 created_at: '2024-01-20T11:00:00Z',
@@ -120,25 +126,29 @@ export const Marketplace: React.FC = () => {
                 compatibility: ['1.0.0'],
                 size_bytes: 3072,
                 hash: 'ghi789',
+                downloadUrl: 'https://marketplace.canvascontracts.com/api/v1/items/3/download',
+                isFavorite: false,
             },
             {
                 id: '4',
-                name: 'Getting Started with Canvas Contracts',
-                description: 'Comprehensive tutorial covering the basics of visual smart contract development.',
-                author: 'canvas_team',
-                version: '1.0.0',
-                item_type: 'Tutorial',
-                tags: ['tutorial', 'beginner', 'basics'],
+                name: 'Crypto Signature Verifier',
+                description: 'ECDSA and Ed25519 signature verification nodes for contract authentication.',
+                author: 'crypto_dev',
+                version: '2.0.0',
+                item_type: 'CustomNode',
+                tags: ['crypto', 'signature', 'ecdsa', 'ed25519'],
                 rating: 4.7,
                 downloads: 3400,
                 created_at: '2024-01-05T08:00:00Z',
                 updated_at: '2024-02-10T12:00:00Z',
                 price: undefined,
-                license: 'CC-BY-SA',
-                dependencies: [],
+                license: 'MIT',
+                dependencies: ['sodium-core'],
                 compatibility: ['1.0.0'],
-                size_bytes: 1024,
+                size_bytes: 10240,
                 hash: 'jkl012',
+                downloadUrl: 'https://marketplace.canvascontracts.com/api/v1/items/4/download',
+                isFavorite: false,
             },
         ]
 
@@ -197,9 +207,24 @@ export const Marketplace: React.FC = () => {
     const handleDownload = async (item: MarketplaceItem) => {
         setLoading(true)
         try {
-            // TODO: Implement actual download
-            console.log('Downloading item:', item.name)
-            await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate download
+            if (item.downloadUrl) {
+                const response = await fetch(item.downloadUrl)
+                const blob = await response.blob()
+                const url = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = url
+                link.download = `${item.name.replace(/\s+/g, '-').toLowerCase()}.json`
+                link.click()
+                URL.revokeObjectURL(url)
+            } else {
+                const blob = new Blob([JSON.stringify(item, null, 2)], { type: 'application/json' })
+                const url = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = url
+                link.download = `${item.name.replace(/\s+/g, '-').toLowerCase()}.json`
+                link.click()
+                URL.revokeObjectURL(url)
+            }
             alert(`Downloaded ${item.name} successfully!`)
         } catch (error) {
             console.error('Download failed:', error)
@@ -210,12 +235,15 @@ export const Marketplace: React.FC = () => {
     }
 
     const handleFavorite = (item: MarketplaceItem) => {
-        // TODO: Implement favorite functionality
-        console.log('Favorited item:', item.name)
+        setItems(prev => prev.map(i =>
+            i.id === item.id ? { ...i, isFavorite: !i.isFavorite } : i
+        ))
+        setFilteredItems(prev => prev.map(i =>
+            i.id === item.id ? { ...i, isFavorite: !i.isFavorite } : i
+        ))
     }
 
     const handleShare = (item: MarketplaceItem) => {
-        // TODO: Implement share functionality
         navigator.clipboard.writeText(`https://marketplace.canvascontracts.com/item/${item.id}`)
         alert('Link copied to clipboard!')
     }

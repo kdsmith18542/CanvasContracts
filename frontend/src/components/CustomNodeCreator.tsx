@@ -74,9 +74,13 @@ export const CustomNodeCreator: React.FC = () => {
         }
 
         try {
-            // TODO: Implement save functionality
-            // await TauriService.saveCustomNode(nodeDefinition)
-            console.log('Saving custom node:', nodeDefinition)
+            const blob = new Blob([JSON.stringify(nodeDefinition, null, 2)], { type: 'application/json' })
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = url
+            link.download = `custom-node-${nodeDefinition.name}.canvas-node.json`
+            link.click()
+            URL.revokeObjectURL(url)
             alert('Custom node saved successfully!')
             handleClose()
         } catch (error) {
@@ -164,8 +168,29 @@ export const CustomNodeCreator: React.FC = () => {
     }
 
     const handleImportWasm = () => {
-        // TODO: Implement WASM file import
-        alert('WASM import functionality coming soon')
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = '.wasm'
+        input.onchange = async (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0]
+            if (!file) return
+            try {
+                const buffer = await file.arrayBuffer()
+                const bytes = new Uint8Array(buffer)
+                let binary = ''
+                bytes.forEach((b) => { binary += String.fromCharCode(b) })
+                const base64 = btoa(binary)
+                setNodeDefinition(prev => ({
+                    ...prev,
+                    implementation: { ...prev.implementation, data: base64 }
+                }))
+                alert('WASM file imported successfully!')
+            } catch (error) {
+                console.error('Failed to import WASM file:', error)
+                alert('Failed to import WASM file')
+            }
+        }
+        input.click()
     }
 
     const handleExportNode = () => {

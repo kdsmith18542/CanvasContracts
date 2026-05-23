@@ -1,97 +1,68 @@
-//! Abstract Syntax Tree (AST) generation from Graph IR
-
 use crate::compiler::graph_ir::GraphIR;
 use serde::Serialize;
 
-/// Semantic AST node types for WASM compilation
 #[derive(Debug, Clone, Serialize)]
 pub enum ASTNode {
-    /// I64 binary operation
+    I64Const(i64),
     I64BinOp {
         op: I64BinOpKind,
-        left: i64,
-        right: i64,
+        left: Box<ASTNode>,
+        right: Box<ASTNode>,
     },
-    /// I64 unary operation
     I64UnaryOp {
         op: I64UnaryOpKind,
-        operand: i64,
+        operand: Box<ASTNode>,
     },
-    /// Condition with I64 operands (evaluated as i64 != 0)
     I64Condition {
         op: ConditionOpKind,
-        left: i64,
-        right: i64,
+        left: Box<ASTNode>,
+        right: Box<ASTNode>,
     },
-    /// If/else branching
     IfElse {
         condition: Box<ASTNode>,
         true_body: Vec<ASTNode>,
         false_body: Vec<ASTNode>,
     },
-    /// Host function call (for storage operations)
     Call {
         import_module: String,
         import_name: String,
         args: Vec<ASTNode>,
     },
-    /// No-op (for Start/End flow nodes)
     Nop,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum I64BinOpKind {
-    Add,
-    Sub,
-    Mul,
-    Div,
-}
+pub enum I64BinOpKind { Add, Sub, Mul, Div }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum I64UnaryOpKind {
-    Not,
-}
+pub enum I64UnaryOpKind { Not }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub enum ConditionOpKind {
-    Eq,
-    Ne,
-    Lt,
-    Gt,
-    And,
-    Or,
-}
+pub enum ConditionOpKind { Eq, Ne, Lt, Gt, And, Or }
 
-/// AST representation — the body of the contract's main function
 #[derive(Debug, Clone, Serialize)]
 pub struct AST {
     pub body: Vec<ASTNode>,
-    /// Imports required (module, name)
     pub imports: Vec<(String, String)>,
 }
 
 impl AST {
     pub fn new() -> Self {
-        Self {
-            body: Vec::new(),
-            imports: Vec::new(),
-        }
+        Self { body: Vec::new(), imports: Vec::new() }
     }
 
-    /// Generate AST from Graph IR using topological order
     pub fn from_graph_ir(ir: &GraphIR) -> Self {
         let mut ast = AST::new();
 
-        // Topological sort for execution order
         let order = match petgraph::algo::toposort(&ir.graph, None) {
             Ok(o) => o,
-            Err(_) => return ast, // cyclic graph, no AST
+            Err(_) => return ast,
         };
 
-        let name_to_index: std::collections::HashMap<_, _> = ir.nodes.keys()
-            .enumerate()
-            .map(|(i, id)| (*id, i))
-            .collect();
+        // Cache: node_id → (port_id → ASTNode expression for that output)
+        use crate::types::NodeId;
+        use std::collections::HashMap;
+        let mut output_exprs: HashMap<NodeId, HashMap<String, ASTNode>> = HashMap::new();
 
         for node_idx in order {
             let node_id = ir.graph[node_idx];
@@ -100,87 +71,100 @@ impl AST {
                 None => continue,
             };
 
+            // Resolve an input port's value: check connections, then properties, then default
+            let resolve_input = |port_id: &str, ir: &GraphIR, node_id: &NodeId,
+                                 output_exprs: &HashMap<NodeId, HashMap<String, ASTNode>>,
+                                 properties: &HashMap<String, serde_json::Value>| -> ASTNode {
+                // Check if this port has an incoming connection
+                for conn in &ir.connections {
+                    if conn.target == *node_id && conn.target_port == port_id {
+                        // Found connection — use predecessor's cached output expression
+                        if let Some(port_map) = output_exprs.get(&conn.source) {
+                            if let Some(expr) = port_map.get(&conn.source_port) {
+                                return expr.clone();
+                            }
+                        }
+                    }
+                }
+                // Fall back to property value
+                if let Some(val) = properties.get(port_id).and_then(|v| v.as_i64()) {
+                    return ASTNode::I64Const(val);
+                }
+                ASTNode::I64Const(0)
+            };
+
             let ast_node = match ir_node.node_type.as_str() {
-                "Add" => {
-                    let a = get_i64_property(&ir_node.properties, "a").unwrap_or(0);
-                    let b = get_i64_property(&ir_node.properties, "b").unwrap_or(0);
-                    ASTNode::I64BinOp { op: I64BinOpKind::Add, left: a, right: b }
-                }
-                "Subtract" => {
-                    let a = get_i64_property(&ir_node.properties, "a").unwrap_or(0);
-                    let b = get_i64_property(&ir_node.properties, "b").unwrap_or(0);
-                    ASTNode::I64BinOp { op: I64BinOpKind::Sub, left: a, right: b }
-                }
-                "Multiply" => {
-                    let a = get_i64_property(&ir_node.properties, "a").unwrap_or(0);
-                    let b = get_i64_property(&ir_node.properties, "b").unwrap_or(0);
-                    ASTNode::I64BinOp { op: I64BinOpKind::Mul, left: a, right: b }
-                }
-                "Divide" => {
-                    let a = get_i64_property(&ir_node.properties, "a").unwrap_or(0);
-                    let b = get_i64_property(&ir_node.properties, "b").unwrap_or(1);
-                    ASTNode::I64BinOp { op: I64BinOpKind::Div, left: a, right: b }
+                "Add" | "Subtract" | "Multiply" | "Divide" => {
+                    let a = resolve_input("a", ir, &node_id, &output_exprs, &ir_node.properties);
+                    let b = resolve_input("b", ir, &node_id, &output_exprs, &ir_node.properties);
+                    let op = match ir_node.node_type.as_str() {
+                        "Add" => I64BinOpKind::Add,
+                        "Subtract" => I64BinOpKind::Sub,
+                        "Multiply" => I64BinOpKind::Mul,
+                        "Divide" => I64BinOpKind::Div,
+                        _ => unreachable!(),
+                    };
+                    // Wrap in a struct-like node, output is the result
+                    ASTNode::I64BinOp { op, left: Box::new(a), right: Box::new(b) }
                 }
                 "And" => {
-                    let a = get_i64_property(&ir_node.properties, "a").unwrap_or(0);
-                    let b = get_i64_property(&ir_node.properties, "b").unwrap_or(0);
-                    ASTNode::I64Condition { op: ConditionOpKind::And, left: a, right: b }
+                    let a = resolve_input("a", ir, &node_id, &output_exprs, &ir_node.properties);
+                    let b = resolve_input("b", ir, &node_id, &output_exprs, &ir_node.properties);
+                    ASTNode::I64Condition { op: ConditionOpKind::And, left: Box::new(a), right: Box::new(b) }
                 }
                 "Or" => {
-                    let a = get_i64_property(&ir_node.properties, "a").unwrap_or(0);
-                    let b = get_i64_property(&ir_node.properties, "b").unwrap_or(0);
-                    ASTNode::I64Condition { op: ConditionOpKind::Or, left: a, right: b }
+                    let a = resolve_input("a", ir, &node_id, &output_exprs, &ir_node.properties);
+                    let b = resolve_input("b", ir, &node_id, &output_exprs, &ir_node.properties);
+                    ASTNode::I64Condition { op: ConditionOpKind::Or, left: Box::new(a), right: Box::new(b) }
                 }
                 "Not" => {
-                    let operand = get_i64_property(&ir_node.properties, "input").unwrap_or(0);
-                    ASTNode::I64UnaryOp { op: I64UnaryOpKind::Not, operand }
+                    let operand = resolve_input("input", ir, &node_id, &output_exprs, &ir_node.properties);
+                    ASTNode::I64UnaryOp { op: I64UnaryOpKind::Not, operand: Box::new(operand) }
                 }
                 "ReadStorage" => {
-                    let key = get_string_property(&ir_node.properties, "key")
-                        .unwrap_or_else(|| "default_key".to_string());
                     ast.imports.push(("baals".to_string(), "baals_read_storage".to_string()));
                     ASTNode::Call {
                         import_module: "baals".to_string(),
                         import_name: "baals_read_storage".to_string(),
-                        args: vec![ASTNode::I64BinOp {
-                            op: I64BinOpKind::Add,
-                            left: 0,
-                            right: 0, // placeholder — key is a string, would need string encoding
-                        }],
+                        args: vec![ASTNode::I64Const(0)],
                     }
                 }
                 "WriteStorage" => {
-                    let key = get_string_property(&ir_node.properties, "key")
-                        .unwrap_or_else(|| "default_key".to_string());
-                    let value = get_i64_property(&ir_node.properties, "value").unwrap_or(0);
+                    let value = resolve_input("value", ir, &node_id, &output_exprs, &ir_node.properties);
                     ast.imports.push(("baals".to_string(), "baals_write_storage".to_string()));
                     ASTNode::Call {
                         import_module: "baals".to_string(),
                         import_name: "baals_write_storage".to_string(),
-                        args: vec![ASTNode::I64BinOp {
-                            op: I64BinOpKind::Add, left: 0, right: 0 // placeholder
-                        }],
+                        args: vec![value],
                     }
                 }
                 "If" => {
-                    let condition_val = get_bool_property(&ir_node.properties, "condition").unwrap_or(false);
-                    let cond = if condition_val {
-                        ASTNode::I64BinOp { op: I64BinOpKind::Add, left: 1, right: 0 }
-                    } else {
-                        ASTNode::I64BinOp { op: I64BinOpKind::Add, left: 0, right: 0 }
-                    };
-                    // Find true/false flow targets from connections
+                    let condition_val = ir_node.properties.get("condition").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let cond = Box::new(ASTNode::I64Const(if condition_val { 1 } else { 0 }));
                     let (true_body, false_body) = find_if_branches(ir, node_id);
-                    ASTNode::IfElse {
-                        condition: Box::new(cond),
-                        true_body,
-                        false_body,
-                    }
+                    ASTNode::IfElse { condition: cond, true_body, false_body }
                 }
-                "Start" | "End" => ASTNode::Nop,
+                "Start" | "End" | "VerifySignature" | "DecodeProof" => ASTNode::Nop,
                 _ => ASTNode::Nop,
             };
 
+            // Cache this node's output expressions for downstream consumers
+            let mut outputs = HashMap::new();
+            if matches!(&ast_node, ASTNode::Nop) {
+                // Nop nodes produce no value output
+            } else if matches!(&ast_node, ASTNode::Call { .. }) {
+                // Call nodes may produce side effects but no meaningful output to chain
+                outputs.insert("result".to_string(), ast_node.clone());
+            } else {
+                outputs.insert("result".to_string(), ast_node.clone());
+            }
+            // For non-If nodes, also cache a flow output
+            if ir_node.node_type != "If" && !matches!(&ast_node, ASTNode::Nop) {
+                outputs.insert("flow_out".to_string(), ast_node.clone());
+            }
+            output_exprs.insert(node_id, outputs);
+
+            // Add to body
             ast.body.push(ast_node);
         }
 
@@ -189,12 +173,9 @@ impl AST {
 }
 
 impl Default for AST {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
-/// Find the nodes on the true and false branches of an If node
 fn find_if_branches(ir: &GraphIR, if_node_id: crate::types::NodeId) -> (Vec<ASTNode>, Vec<ASTNode>) {
     let mut true_body = Vec::new();
     let mut false_body = Vec::new();
@@ -205,20 +186,18 @@ fn find_if_branches(ir: &GraphIR, if_node_id: crate::types::NodeId) -> (Vec<ASTN
             if let Some(target) = target_node {
                 let ast_node = match target.node_type.as_str() {
                     "WriteStorage" => {
-                        let key = get_string_property(&target.properties, "key")
-                            .unwrap_or_else(|| "default".to_string());
-                        let value = get_i64_property(&target.properties, "value").unwrap_or(0);
+                        let value = target.properties.get("value").and_then(|v| v.as_i64()).unwrap_or(0);
                         ASTNode::Call {
                             import_module: "baals".to_string(),
                             import_name: "baals_write_storage".to_string(),
-                            args: vec![ASTNode::I64BinOp { op: I64BinOpKind::Add, left: 0, right: value }],
+                            args: vec![ASTNode::I64Const(value)],
                         }
                     }
                     "ReadStorage" => {
                         ASTNode::Call {
                             import_module: "baals".to_string(),
                             import_name: "baals_read_storage".to_string(),
-                            args: vec![ASTNode::I64BinOp { op: I64BinOpKind::Add, left: 0, right: 0 }],
+                            args: vec![ASTNode::I64Const(0)],
                         }
                     }
                     _ => ASTNode::Nop,
@@ -233,16 +212,4 @@ fn find_if_branches(ir: &GraphIR, if_node_id: crate::types::NodeId) -> (Vec<ASTN
     }
 
     (true_body, false_body)
-}
-
-fn get_i64_property(props: &std::collections::HashMap<String, serde_json::Value>, key: &str) -> Option<i64> {
-    props.get(key).and_then(|v| v.as_i64())
-}
-
-fn get_string_property(props: &std::collections::HashMap<String, serde_json::Value>, key: &str) -> Option<String> {
-    props.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
-}
-
-fn get_bool_property(props: &std::collections::HashMap<String, serde_json::Value>, key: &str) -> Option<bool> {
-    props.get(key).and_then(|v| v.as_bool())
 }

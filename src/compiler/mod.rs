@@ -40,9 +40,9 @@ impl Compiler {
         let ast = AST::from_graph_ir(&graph_ir);
 
         // Step 3: Generate WASM from AST
-        let wasm_gen = WasmGenerator::new(self.config.compiler.optimization_level);
+        let wasm_gen = WasmGenerator::new();
         let wasm_result = wasm_gen.generate(&ast)
-            .map_err(|e| CanvasError::Compilation(e))?;
+            .map_err(CanvasError::Compilation)?;
 
         // Step 3.5: Validate generated WASM with wasmtime
         let engine = wasmtime::Engine::default();

@@ -1,21 +1,31 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use canvas_contracts::{
-    Compiler, WasmRuntime, BaalsClient, AiAssistant,
+    Compiler, WasmRuntime, create_client, BaalsClient,
+    nodes::builtin_node_definitions,
     types::{VisualGraph, CompilationResult},
     error::CanvasResult,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use tauri::State;
 
-// App state
 struct AppState {
     compiler: Mutex<Option<Compiler>>,
     runtime: Mutex<Option<WasmRuntime>>,
-    baals_client: Mutex<Option<BaalsClient>>,
-    ai_assistant: Mutex<Option<AiAssistant>>,
+    baals_client: Mutex<Option<Box<dyn BaalsClient>>>,
+}
+
+fn lock_compiler(state: &AppState) -> Result<std::sync::MutexGuard<'_, Option<Compiler>>, String> {
+    state.compiler.lock().map_err(|_| "Internal error: compiler mutex poisoned".to_string())
+}
+
+fn lock_client(state: &AppState) -> Result<std::sync::MutexGuard<'_, Option<Box<dyn BaalsClient>>>, String> {
+    state.baals_client.lock().map_err(|_| "Internal error: BaaLS client mutex poisoned".to_string())
+}
+
+fn lock_mut<T>(m: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>, String> {
+    m.lock().map_err(|_| "Internal error: mutex poisoned".to_string())
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,9 +47,9 @@ async fn compile_contract(
     state: State<'_, AppState>,
     request: CompileRequest,
 ) -> Result<CompileResponse, String> {
-    let compiler = state.compiler.lock().unwrap();
+    let compiler = lock_compiler(&state)?;
     let compiler = compiler.as_ref().ok_or("Compiler not initialized")?;
-    
+
     match compiler.compile(&request.graph) {
         Ok(result) => Ok(CompileResponse {
             success: true,
@@ -61,25 +71,95 @@ async fn validate_graph(
     state: State<'_, AppState>,
     graph: VisualGraph,
 ) -> Result<serde_json::Value, String> {
-    let compiler = state.compiler.lock().unwrap();
+    let compiler = lock_compiler(&state)?;
     let compiler = compiler.as_ref().ok_or("Compiler not initialized")?;
-    
+
     let validator = compiler.validator()?;
     let result = validator.validate(&graph)?;
-    
+
     Ok(serde_json::to_value(result).map_err(|e| e.to_string())?)
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct DeployRequest {
+    wasm_bytes: Vec<u8>,
+    private_key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DeployResponse {
+    success: bool,
+    contract_address: String,
+    transaction_hash: String,
+    gas_used: u64,
+    error: Option<String>,
+}
+
 #[tauri::command]
-async fn analyze_patterns(
+async fn deploy_contract(
     state: State<'_, AppState>,
-    graph: VisualGraph,
-) -> Result<serde_json::Value, String> {
-    let ai = state.ai_assistant.lock().unwrap();
-    let ai = ai.as_ref().ok_or("AI Assistant not initialized")?;
-    
-    let analysis = ai.analyze_patterns(&graph)?;
-    Ok(serde_json::to_value(analysis).map_err(|e| e.to_string())?)
+    request: DeployRequest,
+) -> Result<DeployResponse, String> {
+    let client = lock_client(&state)?;
+    let client = client.as_ref().ok_or("BaaLS client not initialized")?;
+
+    match client.deploy_contract(&request.wasm_bytes, serde_json::json!({}), &request.private_key) {
+        Ok(result) => Ok(DeployResponse {
+            success: true,
+            contract_address: result.contract_address,
+            transaction_hash: result.transaction_hash,
+            gas_used: result.gas_used,
+            error: None,
+        }),
+        Err(e) => Ok(DeployResponse {
+            success: false,
+            contract_address: String::new(),
+            transaction_hash: String::new(),
+            gas_used: 0,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct NodeDefinitionResponse {
+    id: String,
+    name: String,
+    description: String,
+    category: String,
+    inputs: Vec<PortInfo>,
+    outputs: Vec<PortInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PortInfo {
+    name: String,
+    value_type: String,
+    required: bool,
+}
+
+#[tauri::command]
+async fn get_node_definitions() -> Result<Vec<NodeDefinitionResponse>, String> {
+    let definitions = builtin_node_definitions();
+    let response: Vec<NodeDefinitionResponse> = definitions.iter().map(|d| {
+        NodeDefinitionResponse {
+            id: d.id.clone(),
+            name: d.name.clone(),
+            description: d.description.clone(),
+            category: d.category.clone(),
+            inputs: d.inputs.iter().map(|p| PortInfo {
+                name: p.name.clone(),
+                value_type: format!("{:?}", p.value_type),
+                required: p.required,
+            }).collect(),
+            outputs: d.outputs.iter().map(|p| PortInfo {
+                name: p.name.clone(),
+                value_type: format!("{:?}", p.value_type),
+                required: p.required,
+            }).collect(),
+        }
+    }).collect();
+    Ok(response)
 }
 
 fn main() {
@@ -88,35 +168,28 @@ fn main() {
             compiler: Mutex::new(None),
             runtime: Mutex::new(None),
             baals_client: Mutex::new(None),
-            ai_assistant: Mutex::new(None),
         })
         .setup(|app| {
-            // Initialize canvas-contracts components
             let config = canvas_contracts::config::Config::default();
-            
+
             if let Ok(compiler) = Compiler::new(&config) {
-                *app.state::<AppState>().compiler.lock().unwrap() = Some(compiler);
+                *lock_mut(&app.state::<AppState>().compiler).unwrap_or_else(|_| panic!("lock")) = Some(compiler);
             }
-            
             if let Ok(runtime) = WasmRuntime::new(&config) {
-                *app.state::<AppState>().runtime.lock().unwrap() = Some(runtime);
+                *lock_mut(&app.state::<AppState>().runtime).unwrap_or_else(|_| panic!("lock")) = Some(runtime);
             }
-            
-            if let Ok(client) = BaalsClient::new(&config) {
-                *app.state::<AppState>().baals_client.lock().unwrap() = Some(client);
+            if let Ok(client) = create_client(&config) {
+                *lock_mut(&app.state::<AppState>().baals_client).unwrap_or_else(|_| panic!("lock")) = Some(client);
             }
-            
-            if let Ok(ai) = AiAssistant::new(&config) {
-                *app.state::<AppState>().ai_assistant.lock().unwrap() = Some(ai);
-            }
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             compile_contract,
             validate_graph,
-            analyze_patterns,
+            get_node_definitions,
+            deploy_contract,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-} 
+}

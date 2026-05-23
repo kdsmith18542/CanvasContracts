@@ -1,5 +1,7 @@
 # Deployment Guide
 
+> **Note:** This document is aspirational. The deployment module (`src/deployment/`) is feature-gated and does not compile. CLI commands like `blue-green`, `canary`, `scale`, `metrics`, `logs`, `health` do not exist. The actual CLI supports `compile`, `simulate`, `deploy`, `validate`, `editor`, and `info`. See [plan.md](../../plan.md) and the [CLI reference](../reference/cli.md) for current capabilities.
+
 This guide covers deploying Canvas Contracts to production environments, including local development, staging, and production deployments.
 
 ## Table of Contents

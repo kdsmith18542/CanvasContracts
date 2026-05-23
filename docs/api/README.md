@@ -1,5 +1,7 @@
 # API Reference
 
+> **Note:** This document describes the intended API design and is aspirational. The code examples use types and patterns (`Graph::new()`, `NodeType`, `CanvasSdk`, `DeploymentManager`, `PrometheusExporter`) that do not match the current implementation. See [plan.md](../../plan.md) for actual current state.
+
 This document provides comprehensive API documentation for the Canvas Contracts platform. The API is designed to be modular, extensible, and easy to integrate into your applications.
 
 ## Table of Contents

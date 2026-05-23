@@ -4,9 +4,11 @@ use clap::{Parser, Subcommand};
 use log::{error, info};
 
 use canvas_contracts::{
-    compiler::Compiler,
+    compiler::{Compiler, GraphExecutor},
     config::ConfigManager,
     error::{CanvasError, CanvasResult},
+    nodes::{NodeRegistry, builtin_node_definitions},
+    types::{ExecutionContext, VisualGraph},
     init, info as lib_info,
 };
 
@@ -52,10 +54,14 @@ enum Commands {
     Simulate {
         /// Contract WASM file
         #[arg(short, long)]
-        contract: String,
+        contract: Option<String>,
+
+        /// Graph JSON file (compile + simulate in one step)
+        #[arg(long)]
+        graph: Option<String>,
 
         /// Input data file (JSON)
-        #[arg(short, long)]
+        #[arg(short = 'd', long)]
         input: Option<String>,
 
         /// Gas limit
@@ -121,15 +127,21 @@ fn main() -> CanvasResult<()> {
 
     // Load configuration
     let config_path = std::path::PathBuf::from(&cli.config);
-    let mut config_manager = ConfigManager::new(config_path)?;
+    let config_manager = ConfigManager::new(config_path)?;
 
     match &cli.command {
         Some(Commands::Compile { input, output, optimize }) => {
             compile_contract(input, output, *optimize, &config_manager)?
         }
 
-        Some(Commands::Simulate { contract, input, gas_limit }) => {
-            simulate_contract(contract, input.as_deref(), *gas_limit, &config_manager)?
+        Some(Commands::Simulate { contract, graph, input, gas_limit }) => {
+            if let Some(graph_path) = graph {
+                simulate_graph(graph_path, input.as_deref(), *gas_limit, &config_manager)?
+            } else if let Some(contract_path) = contract {
+                simulate_contract(contract_path, input.as_deref(), *gas_limit, &config_manager)?
+            } else {
+                return Err(CanvasError::Config("Either --contract or --graph must be provided".to_string()));
+            }
         }
 
         Some(Commands::Deploy { contract, args, key }) => {
@@ -160,17 +172,17 @@ fn main() -> CanvasResult<()> {
 fn compile_contract(
     input: &str,
     output: &str,
-    optimize: bool,
+    _optimize: bool,
     config_manager: &ConfigManager,
 ) -> CanvasResult<()> {
     info!("Compiling contract from {} to {}", input, output);
 
     // Load the visual graph
     let graph_content = std::fs::read_to_string(input)
-        .map_err(|e| CanvasError::Io(e))?;
+        .map_err(CanvasError::Io)?;
 
     let graph: canvas_contracts::types::VisualGraph = serde_json::from_str(&graph_content)
-        .map_err(|e| CanvasError::Serialization(e))?;
+        .map_err(CanvasError::Serialization)?;
 
     // Create compiler
     let compiler = Compiler::new(config_manager.config())?;
@@ -180,14 +192,14 @@ fn compile_contract(
 
     // Write WASM output
     std::fs::write(output, &result.wasm_bytes)
-        .map_err(|e| CanvasError::Io(e))?;
+        .map_err(CanvasError::Io)?;
 
     // Write ABI
     let abi_path = output.replace(".wasm", ".abi.json");
     let abi_content = serde_json::to_string_pretty(&result.abi)
-        .map_err(|e| CanvasError::Serialization(e))?;
+        .map_err(CanvasError::Serialization)?;
     std::fs::write(&abi_path, abi_content)
-        .map_err(|e| CanvasError::Io(e))?;
+        .map_err(CanvasError::Io)?;
 
     info!("Compilation successful!");
     info!("WASM file: {}", output);
@@ -204,6 +216,55 @@ fn compile_contract(
     Ok(())
 }
 
+fn simulate_graph(
+    graph_path: &str,
+    _input: Option<&str>,
+    gas_limit: u64,
+    _config_manager: &ConfigManager,
+) -> CanvasResult<()> {
+    info!("Simulating graph: {}", graph_path);
+
+    // Load the visual graph
+    let graph_content = std::fs::read_to_string(graph_path)
+        .map_err(CanvasError::Io)?;
+    let graph: VisualGraph = serde_json::from_str(&graph_content)
+        .map_err(CanvasError::Serialization)?;
+
+    // Build a fully populated node registry
+    let mut registry = NodeRegistry::new();
+    for def in builtin_node_definitions() {
+        registry.register_node(def);
+    }
+
+    // Create executor and execution context
+    let executor = GraphExecutor::new(registry);
+    let context = ExecutionContext::new(gas_limit);
+
+    // Execute the graph
+    let (trace, _final_context) = executor.execute(&graph, context)?;
+
+    // Print execution trace
+    info!("Execution completed!");
+    info!("Success: {}", trace.success);
+    info!("Total gas used: {}", trace.total_gas);
+    info!("Steps: {}", trace.steps.len());
+
+    for step in &trace.steps {
+        info!("  Step {}: {} ({})", step.step_number, step.node_type, step.node_id);
+        info!("    Gas: {}, Duration: {}ms", step.gas_consumed, step.duration_ms);
+        if let Some(err) = &step.error {
+            info!("    Error: {}", err);
+        }
+    }
+
+    if let Some(err) = &trace.error {
+        error!("Execution failed: {}", err);
+        return Err(CanvasError::ExecutionError(err.clone()));
+    }
+
+    Ok(())
+}
+
 fn simulate_contract(
     contract: &str,
     input: Option<&str>,
@@ -214,14 +275,14 @@ fn simulate_contract(
 
     // Load WASM bytes
     let wasm_bytes = std::fs::read(contract)
-        .map_err(|e| CanvasError::Io(e))?;
+        .map_err(CanvasError::Io)?;
 
     // Load input data if provided
     let input_data = if let Some(input_file) = input {
         let content = std::fs::read_to_string(input_file)
-            .map_err(|e| CanvasError::Io(e))?;
+            .map_err(CanvasError::Io)?;
         serde_json::from_str(&content)
-            .map_err(|e| CanvasError::Serialization(e))?
+            .map_err(CanvasError::Serialization)?
     } else {
         serde_json::Value::Null
     };
@@ -256,23 +317,23 @@ fn deploy_contract(
 
     // Load WASM bytes
     let wasm_bytes = std::fs::read(contract)
-        .map_err(|e| CanvasError::Io(e))?;
+        .map_err(CanvasError::Io)?;
 
     // Load private key
     let key_content = std::fs::read_to_string(key)
-        .map_err(|e| CanvasError::Io(e))?;
+        .map_err(CanvasError::Io)?;
     let private_key = key_content.trim();
 
     // Parse constructor arguments
     let constructor_args = if let Some(args_str) = args {
         serde_json::from_str(args_str)
-            .map_err(|e| CanvasError::Serialization(e))?
+            .map_err(CanvasError::Serialization)?
     } else {
         serde_json::Value::Null
     };
 
     // Create BaaLS client
-    let baals_client = canvas_contracts::baals::BaalsClient::new(config_manager.config())?;
+    let baals_client = canvas_contracts::baals::create_client(config_manager.config())?;
 
     // Deploy contract
     let deployment_result = baals_client.deploy_contract(
@@ -337,10 +398,10 @@ fn validate_graph(
 
     // Load the visual graph
     let graph_content = std::fs::read_to_string(input)
-        .map_err(|e| CanvasError::Io(e))?;
+        .map_err(CanvasError::Io)?;
 
     let graph: canvas_contracts::types::VisualGraph = serde_json::from_str(&graph_content)
-        .map_err(|e| CanvasError::Serialization(e))?;
+        .map_err(CanvasError::Serialization)?;
 
     // Create validator
     let validator = canvas_contracts::compiler::Validator::new(config_manager.config())?;

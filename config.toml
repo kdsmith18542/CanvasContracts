@@ -1,0 +1,36 @@
+[app]
+name = "Canvas Contracts"
+version = "0.1.0"
+data_dir = "/home/keith/.local/share/canvas-contracts"
+log_level = "info"
+debug = false
+
+[compiler]
+optimization_level = 2
+debug_info = false
+gas_estimation = true
+max_gas_limit = 10000000
+wasm_target = "wasm32-unknown-unknown"
+flags = []
+
+[runtime]
+runtime_type = "wasmtime"
+memory_limit = 1000
+stack_size_limit = 1048576
+gas_metering = true
+sandbox_mode = true
+timeout = 30
+
+[baals]
+node_url = "http://localhost:8080"
+connection_timeout = 30
+retry_attempts = 3
+enable_local_node = true
+local_node_port = 8080
+
+[development]
+hot_reload = false
+verbose_logging = false
+profiling = false
+test_mode = false
+mock_baals = false
