@@ -20,6 +20,16 @@ pub enum ASTNode {
         left: Box<ASTNode>,
         right: Box<ASTNode>,
     },
+    I64IfElse {
+        condition: Box<ASTNode>,
+        when_true: Box<ASTNode>,
+        when_false: Box<ASTNode>,
+    },
+    IfElse {
+        condition: Box<ASTNode>,
+        true_body: Vec<ASTNode>,
+        false_body: Vec<ASTNode>,
+    },
     Call {
         import_module: String,
         import_name: String,
@@ -87,6 +97,8 @@ impl AST {
                     node_id, ir_node.node_type
                 ));
             }
+
+            let node_flow_guard = resolve_flow_guard_expr(ir, node_id, &output_exprs);
 
             let ast_node = match ir_node.node_type.as_str() {
                 "Add" | "Subtract" | "Multiply" | "Divide" => {
@@ -179,25 +191,57 @@ impl AST {
                         args: vec![key_expr, value_expr],
                     }
                 }
+                "If" => ASTNode::Nop,
                 "Start" | "End" => ASTNode::Nop,
                 _ => unreachable!("unsupported node types are rejected above"),
             };
 
+            let finalized_node = maybe_guard_node_for_flow(
+                &ir_node.node_type,
+                ast_node.clone(),
+                node_flow_guard.clone(),
+            );
+
             let mut outputs = HashMap::new();
-            if !matches!(&ast_node, ASTNode::Nop) {
+            if ir_node.node_type == "If" || !matches!(&finalized_node, ASTNode::Nop) {
                 match ir_node.node_type.as_str() {
+                    "If" => {
+                        let condition_expr = resolve_if_condition_expr(
+                            ir,
+                            node_id,
+                            &output_exprs,
+                            &ir_node.properties,
+                        );
+                        let true_flow = ASTNode::I64Condition {
+                            op: ConditionOpKind::And,
+                            left: Box::new(node_flow_guard.clone()),
+                            right: Box::new(condition_expr.clone()),
+                        };
+                        let false_flow = ASTNode::I64Condition {
+                            op: ConditionOpKind::And,
+                            left: Box::new(node_flow_guard.clone()),
+                            right: Box::new(ASTNode::I64UnaryOp {
+                                op: I64UnaryOpKind::Not,
+                                operand: Box::new(condition_expr),
+                            }),
+                        };
+                        outputs.insert("true_flow".to_string(), true_flow);
+                        outputs.insert("false_flow".to_string(), false_flow);
+                    }
                     "ReadStorage" => {
-                        outputs.insert("value".to_string(), ast_node.clone());
-                        outputs.insert("result".to_string(), ast_node.clone());
+                        outputs.insert("value".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
                     }
                     _ => {
-                        outputs.insert("result".to_string(), ast_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
                     }
                 }
-                outputs.insert("flow_out".to_string(), ASTNode::I64Const(1));
+                if ir_node.node_type != "If" {
+                    outputs.insert("flow_out".to_string(), node_flow_guard.clone());
+                }
             }
             output_exprs.insert(node_id, outputs);
-            ast.body.push(ast_node);
+            ast.body.push(finalized_node);
         }
 
         Ok(ast)
@@ -229,9 +273,72 @@ fn is_compilable_node_type(node_type: &str) -> bool {
             | "And"
             | "Or"
             | "Not"
+            | "If"
             | "ReadStorage"
             | "WriteStorage"
     )
+}
+
+fn maybe_guard_node_for_flow(node_type: &str, node: ASTNode, flow_guard: ASTNode) -> ASTNode {
+    if is_always_true_expr(&flow_guard) || matches!(node, ASTNode::Nop) {
+        return node;
+    }
+
+    match node_type {
+        // Storage calls are side-effectful and must only run when flow is active.
+        "WriteStorage" => ASTNode::IfElse {
+            condition: Box::new(flow_guard),
+            true_body: vec![node],
+            false_body: Vec::new(),
+        },
+        "ReadStorage" => ASTNode::I64IfElse {
+            condition: Box::new(flow_guard),
+            when_true: Box::new(node),
+            when_false: Box::new(ASTNode::I64Const(0)),
+        },
+        // Pure expressions default to 0 when the flow gate is false.
+        _ => ASTNode::I64IfElse {
+            condition: Box::new(flow_guard),
+            when_true: Box::new(node),
+            when_false: Box::new(ASTNode::I64Const(0)),
+        },
+    }
+}
+
+fn resolve_flow_guard_expr(
+    ir: &GraphIR,
+    node_id: crate::types::NodeId,
+    output_exprs: &HashMap<crate::types::NodeId, HashMap<String, ASTNode>>,
+) -> ASTNode {
+    let mut guards = Vec::new();
+    for conn in &ir.connections {
+        if conn.target == node_id
+            && conn.target_port == "flow_in"
+            && output_exprs.get(&conn.source).is_some()
+        {
+            if let Some(port_map) = output_exprs.get(&conn.source) {
+                if let Some(expr) = port_map.get(&conn.source_port) {
+                    guards.push(expr.clone());
+                }
+            }
+        }
+    }
+
+    fold_or_exprs(guards).unwrap_or(ASTNode::I64Const(1))
+}
+
+fn fold_or_exprs(exprs: Vec<ASTNode>) -> Option<ASTNode> {
+    let mut iter = exprs.into_iter();
+    let first = iter.next()?;
+    Some(iter.fold(first, |acc, expr| ASTNode::I64Condition {
+        op: ConditionOpKind::Or,
+        left: Box::new(acc),
+        right: Box::new(expr),
+    }))
+}
+
+fn is_always_true_expr(expr: &ASTNode) -> bool {
+    matches!(expr, ASTNode::I64Const(v) if *v != 0)
 }
 
 fn resolve_input_expr(
@@ -266,6 +373,55 @@ fn resolve_storage_key_expr(
         }
     }
     resolve_input_expr(port_id, ir, node_id, output_exprs, properties)
+}
+
+fn resolve_if_condition_expr(
+    ir: &GraphIR,
+    node_id: crate::types::NodeId,
+    output_exprs: &HashMap<crate::types::NodeId, HashMap<String, ASTNode>>,
+    properties: &HashMap<String, serde_json::Value>,
+) -> ASTNode {
+    for conn in &ir.connections {
+        if conn.target == node_id
+            && conn.target_port == "condition"
+            && output_exprs.get(&conn.source).is_some()
+        {
+            if let Some(port_map) = output_exprs.get(&conn.source) {
+                if let Some(expr) = port_map.get(&conn.source_port) {
+                    return expr.clone();
+                }
+            }
+        }
+    }
+
+    if let Some(v) = properties.get("condition") {
+        if let Some(b) = v.as_bool() {
+            return ASTNode::I64Const(if b { 1 } else { 0 });
+        }
+        if let Some(s) = v.as_str() {
+            let normalized = s.trim().to_ascii_lowercase();
+            if normalized == "true" {
+                return ASTNode::I64Const(1);
+            }
+            if normalized == "false" {
+                return ASTNode::I64Const(0);
+            }
+        }
+    }
+
+    if let Some(v) = properties.get("condition_expression") {
+        if let Some(s) = v.as_str() {
+            let normalized = s.trim().to_ascii_lowercase();
+            if normalized == "true" {
+                return ASTNode::I64Const(1);
+            }
+            if normalized == "false" {
+                return ASTNode::I64Const(0);
+            }
+        }
+    }
+
+    ASTNode::I64Const(0)
 }
 
 fn property_to_i64_expr(value: Option<&serde_json::Value>) -> ASTNode {
@@ -425,6 +581,126 @@ mod tests {
         assert!(
             found_connected_add,
             "Expected Add node to consume ReadStorage.value expression"
+        );
+    }
+
+    #[test]
+    fn test_if_branch_produces_guarded_write_storage_calls() {
+        let start_id = Uuid::new_v4();
+        let if_id = Uuid::new_v4();
+        let write_true_id = Uuid::new_v4();
+        let write_false_id = Uuid::new_v4();
+        let end_id = Uuid::new_v4();
+
+        let start = VisualNode::new(start_id, "Start", Position::new(0.0, 0.0))
+            .with_outputs(vec![Port::new("flow_out", "Flow Out", ValueType::Flow)]);
+
+        let if_node = VisualNode::new(if_id, "If", Position::new(100.0, 0.0))
+            .with_inputs(vec![
+                Port::new("flow_in", "Flow In", ValueType::Flow).required(),
+                Port::new("condition", "Condition", ValueType::Boolean).required(),
+            ])
+            .with_outputs(vec![
+                Port::new("true_flow", "True Flow", ValueType::Flow),
+                Port::new("false_flow", "False Flow", ValueType::Flow),
+            ])
+            .with_property("condition", serde_json::json!(true));
+
+        let write_true =
+            VisualNode::new(write_true_id, "WriteStorage", Position::new(250.0, -60.0))
+                .with_inputs(vec![
+                    Port::new("flow_in", "Flow In", ValueType::Flow).required(),
+                    Port::new("key", "Key", ValueType::String).required(),
+                    Port::new("value", "Value", ValueType::Any).required(),
+                ])
+                .with_outputs(vec![Port::new("flow_out", "Flow Out", ValueType::Flow)])
+                .with_property("key", serde_json::json!("branch_result"))
+                .with_property("value", serde_json::json!("true_path"));
+
+        let write_false =
+            VisualNode::new(write_false_id, "WriteStorage", Position::new(250.0, 60.0))
+                .with_inputs(vec![
+                    Port::new("flow_in", "Flow In", ValueType::Flow).required(),
+                    Port::new("key", "Key", ValueType::String).required(),
+                    Port::new("value", "Value", ValueType::Any).required(),
+                ])
+                .with_outputs(vec![Port::new("flow_out", "Flow Out", ValueType::Flow)])
+                .with_property("key", serde_json::json!("branch_result"))
+                .with_property("value", serde_json::json!("false_path"));
+
+        let end =
+            VisualNode::new(end_id, "End", Position::new(400.0, 0.0)).with_inputs(vec![Port::new(
+                "flow_in",
+                "Flow In",
+                ValueType::Flow,
+            )
+            .required()]);
+
+        let mut graph = VisualGraph::new("if-branching");
+        graph.add_node(start);
+        graph.add_node(if_node);
+        graph.add_node(write_true);
+        graph.add_node(write_false);
+        graph.add_node(end);
+
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            start_id,
+            "flow_out",
+            if_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            if_id,
+            "true_flow",
+            write_true_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            if_id,
+            "false_flow",
+            write_false_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            write_true_id,
+            "flow_out",
+            end_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            write_false_id,
+            "flow_out",
+            end_id,
+            "flow_in",
+        ));
+
+        let ir = GraphIR::from_visual_graph(&graph);
+        let ast = AST::from_graph_ir(&ir).expect("AST lowering for If branching should succeed");
+
+        let guarded_writes = ast
+            .body
+            .iter()
+            .filter(|n| {
+                matches!(
+                    n,
+                    ASTNode::IfElse {
+                        true_body,
+                        false_body,
+                        ..
+                    } if true_body.iter().any(|b| matches!(b, ASTNode::Call { import_name, .. } if import_name == "baals_write_storage"))
+                        && false_body.is_empty()
+                )
+            })
+            .count();
+
+        assert_eq!(
+            guarded_writes, 2,
+            "Expected two guarded WriteStorage calls under If branching"
         );
     }
 }

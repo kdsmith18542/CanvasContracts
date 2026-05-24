@@ -306,6 +306,64 @@ impl WasmGenerator {
                     Ok(true)
                 }
             },
+            ASTNode::I64IfElse {
+                condition,
+                when_true,
+                when_false,
+            } => {
+                let cond_produces = self.emit_node(func, condition, import_func_indices)?;
+                if !cond_produces {
+                    return Err("I64IfElse condition must produce a value".to_string());
+                }
+
+                func.instruction(&Instruction::I64Eqz);
+                func.instruction(&Instruction::If(BlockType::Result(ValType::I64)));
+
+                let false_produces = self.emit_node(func, when_false, import_func_indices)?;
+                if !false_produces {
+                    return Err("I64IfElse false branch must produce a value".to_string());
+                }
+
+                func.instruction(&Instruction::Else);
+
+                let true_produces = self.emit_node(func, when_true, import_func_indices)?;
+                if !true_produces {
+                    return Err("I64IfElse true branch must produce a value".to_string());
+                }
+
+                func.instruction(&Instruction::End);
+                Ok(true)
+            }
+            ASTNode::IfElse {
+                condition,
+                true_body,
+                false_body,
+            } => {
+                let cond_produces = self.emit_node(func, condition, import_func_indices)?;
+                if !cond_produces {
+                    return Err("IfElse condition must produce a value".to_string());
+                }
+
+                func.instruction(&Instruction::I64Eqz);
+                func.instruction(&Instruction::If(BlockType::Empty));
+
+                for stmt in false_body {
+                    if self.emit_node(func, stmt, import_func_indices)? {
+                        func.instruction(&Instruction::Drop);
+                    }
+                }
+
+                func.instruction(&Instruction::Else);
+
+                for stmt in true_body {
+                    if self.emit_node(func, stmt, import_func_indices)? {
+                        func.instruction(&Instruction::Drop);
+                    }
+                }
+
+                func.instruction(&Instruction::End);
+                Ok(false)
+            }
             ASTNode::Call {
                 import_module,
                 import_name,
@@ -540,5 +598,49 @@ mod tests {
         assert!(result
             .imports
             .contains(&"baals.baals_write_storage".to_string()));
+    }
+
+    #[test]
+    fn test_if_else_branching_wasm_validates() {
+        let gen = WasmGenerator::new();
+        let ast = AST {
+            body: vec![
+                ASTNode::IfElse {
+                    condition: Box::new(ASTNode::I64Const(1)),
+                    true_body: vec![ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_write_storage".to_string(),
+                        args: vec![ASTNode::I64Const(7), ASTNode::I64Const(42)],
+                    }],
+                    false_body: vec![ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_write_storage".to_string(),
+                        args: vec![ASTNode::I64Const(7), ASTNode::I64Const(0)],
+                    }],
+                },
+                ASTNode::I64IfElse {
+                    condition: Box::new(ASTNode::I64Const(1)),
+                    when_true: Box::new(ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_read_storage".to_string(),
+                        args: vec![ASTNode::I64Const(7)],
+                    }),
+                    when_false: Box::new(ASTNode::I64Const(0)),
+                },
+            ],
+            imports: vec![
+                ("baals".to_string(), "baals_write_storage".to_string()),
+                ("baals".to_string(), "baals_read_storage".to_string()),
+            ],
+        };
+
+        let result = gen.generate(&ast).unwrap();
+        let engine = wasmtime::Engine::default();
+        let validation = wasmtime::Module::validate(&engine, &result.wasm_bytes);
+        assert!(
+            validation.is_ok(),
+            "WASM validation failed: {:?}",
+            validation.err()
+        );
     }
 }
