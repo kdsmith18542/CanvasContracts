@@ -185,7 +185,15 @@ impl AST {
 
             let mut outputs = HashMap::new();
             if !matches!(&ast_node, ASTNode::Nop) {
-                outputs.insert("result".to_string(), ast_node.clone());
+                match ir_node.node_type.as_str() {
+                    "ReadStorage" => {
+                        outputs.insert("value".to_string(), ast_node.clone());
+                        outputs.insert("result".to_string(), ast_node.clone());
+                    }
+                    _ => {
+                        outputs.insert("result".to_string(), ast_node.clone());
+                    }
+                }
                 outputs.insert("flow_out".to_string(), ASTNode::I64Const(1));
             }
             output_exprs.insert(node_id, outputs);
@@ -290,7 +298,7 @@ fn hash_string_to_i64(input: &str) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Position, VisualGraph, VisualNode};
+    use crate::types::{Connection, Port, Position, ValueType, VisualGraph, VisualNode};
     use uuid::Uuid;
 
     #[test]
@@ -312,5 +320,111 @@ mod tests {
 
         assert!(err.contains("GetSender"));
         assert!(err.contains("not currently compilable"));
+    }
+
+    #[test]
+    fn test_read_storage_value_connection_resolves_to_call_expression() {
+        let start_id = Uuid::new_v4();
+        let read_id = Uuid::new_v4();
+        let add_id = Uuid::new_v4();
+        let end_id = Uuid::new_v4();
+
+        let start = VisualNode::new(start_id, "Start", Position::new(0.0, 0.0))
+            .with_outputs(vec![Port::new("flow_out", "Flow Out", ValueType::Flow)]);
+
+        let read = VisualNode::new(read_id, "ReadStorage", Position::new(200.0, 0.0))
+            .with_inputs(vec![
+                Port::new("flow_in", "Flow In", ValueType::Flow).required(),
+                Port::new("key", "Key", ValueType::String).required(),
+            ])
+            .with_outputs(vec![
+                Port::new("flow_out", "Flow Out", ValueType::Flow),
+                Port::new("value", "Value", ValueType::Any),
+            ])
+            .with_property("key", serde_json::json!("stored_value"));
+
+        let add = VisualNode::new(add_id, "Add", Position::new(400.0, 0.0))
+            .with_inputs(vec![
+                Port::new("flow_in", "Flow In", ValueType::Flow).required(),
+                Port::new("a", "A", ValueType::Integer).required(),
+                Port::new("b", "B", ValueType::Integer).required(),
+            ])
+            .with_outputs(vec![
+                Port::new("flow_out", "Flow Out", ValueType::Flow),
+                Port::new("result", "Result", ValueType::Integer),
+            ])
+            .with_property("b", serde_json::json!(5));
+
+        let end =
+            VisualNode::new(end_id, "End", Position::new(600.0, 0.0)).with_inputs(vec![Port::new(
+                "flow_in",
+                "Flow In",
+                ValueType::Flow,
+            )
+            .required()]);
+
+        let mut graph = VisualGraph::new("read-into-add");
+        graph.add_node(start);
+        graph.add_node(read);
+        graph.add_node(add);
+        graph.add_node(end);
+
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            start_id,
+            "flow_out",
+            read_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            read_id,
+            "flow_out",
+            add_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            read_id,
+            "value",
+            add_id,
+            "a",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            add_id,
+            "flow_out",
+            end_id,
+            "flow_in",
+        ));
+
+        let ir = GraphIR::from_visual_graph(&graph);
+        let ast = AST::from_graph_ir(&ir).expect("AST lowering should succeed");
+
+        let mut found_connected_add = false;
+        for node in ast.body {
+            if let ASTNode::I64BinOp { op, left, right } = node {
+                if op == I64BinOpKind::Add {
+                    let left_ok = matches!(
+                        left.as_ref(),
+                        ASTNode::Call {
+                            import_module,
+                            import_name,
+                            ..
+                        } if import_module == "baals" && import_name == "baals_read_storage"
+                    );
+                    let right_ok = matches!(right.as_ref(), ASTNode::I64Const(5));
+                    if left_ok && right_ok {
+                        found_connected_add = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        assert!(
+            found_connected_add,
+            "Expected Add node to consume ReadStorage.value expression"
+        );
     }
 }
