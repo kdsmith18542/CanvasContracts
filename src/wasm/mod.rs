@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
     error::{CanvasError, CanvasResult},
-    types::{Gas, Event},
+    types::{Event, Gas},
 };
 use std::collections::HashMap;
 
@@ -48,32 +48,45 @@ impl WasmRuntime {
             .map_err(|e| CanvasError::Wasm(format!("Failed to compile WASM module: {}", e)))?;
 
         let mut store = wasmtime::Store::new(&self.engine, HostState::new());
-        store.set_fuel(gas_limit)
+        store
+            .set_fuel(gas_limit)
             .map_err(|e| CanvasError::Wasm(format!("Failed to set fuel: {}", e)))?;
 
         let mut linker = wasmtime::Linker::new(&self.engine);
 
-        let storage = std::sync::Arc::new(std::sync::Mutex::new(HashMap::<String, i64>::new()));
+        let storage = std::sync::Arc::new(std::sync::Mutex::new(HashMap::<i64, i64>::new()));
         let storage_clone = storage.clone();
-        linker.func_wrap("baals", "baals_read_storage", move |_key_ptr: i32, _key_len: i32| -> i64 {
-            let map = storage_clone.lock().unwrap();
-            map.get("default").copied().unwrap_or(0)
-        }).map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+        linker
+            .func_wrap("baals", "baals_read_storage", move |key: i64| -> i64 {
+                let map = storage_clone.lock().unwrap();
+                map.get(&key).copied().unwrap_or(0)
+            })
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
-        linker.func_wrap("baals", "baals_write_storage", move |_key_ptr: i32, _key_len: i32, _value: i64| {
-            let mut map = storage.lock().unwrap();
-            map.insert("default".to_string(), _value);
-        }).map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+        linker
+            .func_wrap(
+                "baals",
+                "baals_write_storage",
+                move |key: i64, value: i64| {
+                    let mut map = storage.lock().unwrap();
+                    map.insert(key, value);
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
-        let instance = linker.instantiate(&mut store, &module)
+        let instance = linker
+            .instantiate(&mut store, &module)
             .map_err(|e| CanvasError::Wasm(format!("Failed to instantiate WASM module: {}", e)))?;
 
-        let fuel_before = store.get_fuel()
+        let fuel_before = store
+            .get_fuel()
             .map_err(|e| CanvasError::Wasm(format!("Failed to get fuel: {}", e)))?;
 
-        let main = instance.get_typed_func::<(), i64>(&mut store, "main")
+        let main = instance
+            .get_typed_func::<(), i64>(&mut store, "main")
             .map_err(|e| CanvasError::Wasm(format!("Failed to get main function: {}", e)))?;
-        let result = main.call(&mut store, ())
+        let result = main
+            .call(&mut store, ())
             .map_err(|e| CanvasError::Wasm(format!("Execution failed: {}", e)))?;
 
         let fuel_after = store.get_fuel().unwrap_or(0);
@@ -104,21 +117,28 @@ impl WasmRuntime {
             .map_err(|e| CanvasError::Wasm(format!("Failed to compile WASM module: {}", e)))?;
 
         let mut store = wasmtime::Store::new(&self.engine, HostState::new());
-        store.set_fuel(gas_limit)
+        store
+            .set_fuel(gas_limit)
             .map_err(|e| CanvasError::Wasm(format!("Failed to set fuel: {}", e)))?;
 
         let linker = wasmtime::Linker::new(&self.engine);
 
-        let instance = linker.instantiate(&mut store, &module)
+        let instance = linker
+            .instantiate(&mut store, &module)
             .map_err(|e| CanvasError::Wasm(format!("Failed to instantiate WASM module: {}", e)))?;
 
-        let fuel_before = store.get_fuel()
+        let fuel_before = store
+            .get_fuel()
             .map_err(|e| CanvasError::Wasm(format!("Failed to get fuel: {}", e)))?;
 
-        let func = instance.get_typed_func::<(), i64>(&mut store, function_name)
-            .map_err(|e| CanvasError::Wasm(format!("Failed to get function '{}': {}", function_name, e)))?;
-        let result = func.call(&mut store, ())
-            .map_err(|e| CanvasError::Wasm(format!("Execution of '{}' failed: {}", function_name, e)))?;
+        let func = instance
+            .get_typed_func::<(), i64>(&mut store, function_name)
+            .map_err(|e| {
+                CanvasError::Wasm(format!("Failed to get function '{}': {}", function_name, e))
+            })?;
+        let result = func.call(&mut store, ()).map_err(|e| {
+            CanvasError::Wasm(format!("Execution of '{}' failed: {}", function_name, e))
+        })?;
 
         let fuel_after = store.get_fuel().unwrap_or(0);
         let gas_used = fuel_before.saturating_sub(fuel_after);
@@ -152,7 +172,10 @@ impl WasmRuntime {
         let module = wasmtime::Module::new(&self.engine, wasm_bytes)
             .map_err(|e| CanvasError::Wasm(format!("Failed to parse WASM module: {}", e)))?;
 
-        let imports: Vec<String> = module.imports().map(|i| format!("{}.{}", i.module(), i.name())).collect();
+        let imports: Vec<String> = module
+            .imports()
+            .map(|i| format!("{}.{}", i.module(), i.name()))
+            .collect();
         Ok(imports)
     }
 }
@@ -199,7 +222,12 @@ pub struct SecurityAnalysis {
 }
 
 #[derive(Debug, Clone)]
-pub enum RiskLevel { Low, Medium, High, Critical }
+pub enum RiskLevel {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
 
 #[derive(Debug, Clone)]
 pub struct PerformanceAnalysis {
@@ -299,7 +327,9 @@ mod tests {
         module.section(&codes);
         let wasm_bytes = module.finish();
 
-        let result = runtime.simulate(&wasm_bytes, serde_json::json!({}), 1000).unwrap();
+        let result = runtime
+            .simulate(&wasm_bytes, serde_json::json!({}), 1000)
+            .unwrap();
         assert_eq!(result.output, serde_json::json!({"result": Some(42i64)}));
         assert!(result.gas_used > 0);
     }
@@ -335,8 +365,13 @@ mod tests {
         module.section(&codes);
         let wasm_bytes = module.finish();
 
-        let result = runtime.simulate(&wasm_bytes, serde_json::json!({}), 1000).unwrap();
-        assert!(result.gas_used > 0, "Fuel should be consumed during execution");
+        let result = runtime
+            .simulate(&wasm_bytes, serde_json::json!({}), 1000)
+            .unwrap();
+        assert!(
+            result.gas_used > 0,
+            "Fuel should be consumed during execution"
+        );
         assert!(result.gas_used < 1000, "Should not use all fuel");
         assert_eq!(result.output, serde_json::json!({"result": Some(42i64)}));
     }
@@ -373,6 +408,18 @@ mod tests {
         let wasm_bytes = module.finish();
 
         let result = runtime.simulate(&wasm_bytes, serde_json::json!({}), 1);
-        assert!(result.is_err(), "Should fail with fuel exhaustion when using only 1 fuel unit");
+        assert!(
+            result.is_err(),
+            "Should fail with fuel exhaustion when using only 1 fuel unit"
+        );
+    }
+}
+
+/// Stub WasmModule type for custom nodes compatibility
+pub struct WasmModule;
+
+impl WasmModule {
+    pub fn new(_path: &str) -> CanvasResult<Self> {
+        Ok(Self)
     }
 }

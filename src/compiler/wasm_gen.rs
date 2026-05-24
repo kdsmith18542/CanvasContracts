@@ -1,4 +1,5 @@
-use crate::compiler::ast::{AST, ASTNode, I64BinOpKind, I64UnaryOpKind, ConditionOpKind};
+use crate::compiler::ast::{ASTNode, ConditionOpKind, I64BinOpKind, I64UnaryOpKind, AST};
+use std::collections::{HashMap, HashSet};
 use wasm_encoder::*;
 
 #[derive(Debug, Clone)]
@@ -17,6 +18,32 @@ impl Default for WasmGenerator {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ImportSignature {
+    params: Vec<ValType>,
+    results: Vec<ValType>,
+}
+
+impl ImportSignature {
+    fn for_import(module: &str, name: &str) -> Option<Self> {
+        match (module, name) {
+            ("baals", "baals_read_storage") => Some(Self {
+                params: vec![ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("baals", "baals_write_storage") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![],
+            }),
+            _ => None,
+        }
+    }
+
+    fn returns_value(&self) -> bool {
+        !self.results.is_empty()
+    }
+}
+
 impl WasmGenerator {
     pub fn new() -> Self {
         Self
@@ -24,69 +51,45 @@ impl WasmGenerator {
 
     pub fn generate(&self, ast: &AST) -> Result<WasmGenResult, String> {
         let mut module = Module::new();
-        let mut functions = Vec::new();
-        let mut import_names = Vec::new();
-        let mut export_names: Vec<String> = Vec::new();
 
-        // Collect unique imports from AST
-        let mut seen_imports = std::collections::HashSet::new();
-        for (module_name, func_name) in &ast.imports {
-            let key = format!("{}.{}", module_name, func_name);
-            if seen_imports.insert(key) {
-                import_names.push(format!("{}.{}", module_name, func_name));
-            }
-        }
-
-        // Build import section
-        if !ast.imports.is_empty() {
-            let mut import_section = ImportSection::new();
-            let mut import_counts = std::collections::HashMap::<String, u32>::new();
-            for (module_name, func_name) in &ast.imports {
-                let key = format!("{}.{}", module_name, func_name);
-                if !import_counts.contains_key(&key) {
-                    let count = import_counts.len() as u32;
-                    import_counts.insert(key, count);
-                    import_section.import(module_name, func_name, EntityType::Function(0));
-                }
-            }
-            module.section(&import_section);
-        }
-
-        // Build type section
-        let mut types = TypeSection::new();
-        types.function([], [ValType::I64]);
-        if !ast.imports.is_empty() {
-            types.function([], []);
-        }
+        let ordered_imports = self.collect_ordered_imports(ast);
+        let (types, import_type_indices) = self.build_type_section(&ordered_imports)?;
         module.section(&types);
 
-        // Build function section
-        let mut func_section = FunctionSection::new();
-        func_section.function(0);
-        module.section(&func_section);
-
-        functions.push("main".to_string());
-
-        // Build export section
-        let mut exports = ExportSection::new();
-        let func_index = ast.imports.len() as u32;
-        exports.export("main", ExportKind::Func, func_index);
-        export_names.push("main".to_string());
-        module.section(&exports);
-
-        // Build code section
-        let mut codes = CodeSection::new();
-        let mut func_body = Function::new(vec![]);
-
-        let mut has_body = false;
-        for node in &ast.body {
-            if !matches!(node, ASTNode::Nop) {
-                has_body = true;
-            }
-            self.emit_node(&mut func_body, node)?;
+        let mut import_names = Vec::new();
+        let (imports, import_func_indices) =
+            self.build_import_section(&ordered_imports, &import_type_indices, &mut import_names)?;
+        if !ordered_imports.is_empty() {
+            module.section(&imports);
         }
 
-        if !has_body {
+        let mut functions = FunctionSection::new();
+        // Type index 0 is always main: () -> i64.
+        functions.function(0);
+        module.section(&functions);
+
+        let mut exports = ExportSection::new();
+        let main_func_index = ordered_imports.len() as u32;
+        exports.export("main", ExportKind::Func, main_func_index);
+        module.section(&exports);
+
+        let mut codes = CodeSection::new();
+        // One local that stores the latest produced i64 expression.
+        let mut func_body = Function::new(vec![(1, ValType::I64)]);
+        let result_local = 0u32;
+        let mut has_result = false;
+
+        for node in &ast.body {
+            let produced_value = self.emit_node(&mut func_body, node, &import_func_indices)?;
+            if produced_value {
+                func_body.instruction(&Instruction::LocalSet(result_local));
+                has_result = true;
+            }
+        }
+
+        if has_result {
+            func_body.instruction(&Instruction::LocalGet(result_local));
+        } else {
             func_body.instruction(&Instruction::I64Const(0));
         }
         func_body.instruction(&Instruction::End);
@@ -98,101 +101,259 @@ impl WasmGenerator {
 
         Ok(WasmGenResult {
             wasm_bytes,
-            functions,
+            functions: vec!["main".to_string()],
             imports: import_names,
-            exports: export_names,
+            exports: vec!["main".to_string()],
         })
     }
 
-    fn emit_node(&self, func: &mut Function, node: &ASTNode) -> Result<(), String> {
+    fn collect_ordered_imports(&self, ast: &AST) -> Vec<(String, String)> {
+        let mut seen = HashSet::new();
+        let mut ordered = Vec::new();
+
+        for (module_name, func_name) in &ast.imports {
+            let key = import_key(module_name, func_name);
+            if seen.insert(key) {
+                ordered.push((module_name.clone(), func_name.clone()));
+            }
+        }
+
+        ordered
+    }
+
+    fn build_type_section(
+        &self,
+        ordered_imports: &[(String, String)],
+    ) -> Result<(TypeSection, HashMap<String, u32>), String> {
+        let mut types = TypeSection::new();
+        let mut import_type_indices = HashMap::new();
+
+        // Type index 0: main () -> i64
+        types.function([], [ValType::I64]);
+
+        let mut next_type_index = 1u32;
+        for (module_name, func_name) in ordered_imports {
+            let key = import_key(module_name, func_name);
+            if import_type_indices.contains_key(&key) {
+                continue;
+            }
+
+            let sig = ImportSignature::for_import(module_name, func_name).ok_or_else(|| {
+                format!(
+                    "Unsupported import function '{}.{}' during WASM generation",
+                    module_name, func_name
+                )
+            })?;
+
+            types.function(sig.params, sig.results);
+            import_type_indices.insert(key, next_type_index);
+            next_type_index += 1;
+        }
+
+        Ok((types, import_type_indices))
+    }
+
+    fn build_import_section(
+        &self,
+        ordered_imports: &[(String, String)],
+        import_type_indices: &HashMap<String, u32>,
+        import_names: &mut Vec<String>,
+    ) -> Result<(ImportSection, HashMap<String, u32>), String> {
+        let mut import_section = ImportSection::new();
+        let mut import_func_indices = HashMap::new();
+
+        for (func_index, (module_name, func_name)) in ordered_imports.iter().enumerate() {
+            let key = import_key(module_name, func_name);
+            let type_index = import_type_indices.get(&key).ok_or_else(|| {
+                format!(
+                    "Missing type index for import '{}.{}' during WASM generation",
+                    module_name, func_name
+                )
+            })?;
+
+            import_section.import(module_name, func_name, EntityType::Function(*type_index));
+            import_func_indices.insert(key.clone(), func_index as u32);
+            import_names.push(key);
+        }
+
+        Ok((import_section, import_func_indices))
+    }
+
+    fn emit_node(
+        &self,
+        func: &mut Function,
+        node: &ASTNode,
+        import_func_indices: &HashMap<String, u32>,
+    ) -> Result<bool, String> {
         match node {
-            ASTNode::I64Const(val) => {
-                func.instruction(&Instruction::I64Const(*val));
+            ASTNode::I64Const(value) => {
+                func.instruction(&Instruction::I64Const(*value));
+                Ok(true)
             }
             ASTNode::I64BinOp { op, left, right } => {
+                let left_produces = self.emit_node(func, left, import_func_indices)?;
+                let right_produces = self.emit_node(func, right, import_func_indices)?;
+                if !left_produces || !right_produces {
+                    return Err("Binary operation requires value-producing operands".to_string());
+                }
+
                 if matches!(op, I64BinOpKind::Div) {
-                    // Check for divide-by-zero at codegen time when both sides are constants
-                    if let ASTNode::I64Const(r) = right.as_ref() {
-                        if *r == 0 {
-                            return Err("Division by zero in WASM generation".to_string());
-                        }
+                    if let ASTNode::I64Const(0) = right.as_ref() {
+                        return Err("Division by zero in WASM generation".to_string());
                     }
                 }
-                self.emit_node(func, left)?;
-                self.emit_node(func, right)?;
+
                 match op {
-                    I64BinOpKind::Add => { func.instruction(&Instruction::I64Add); }
-                    I64BinOpKind::Sub => { func.instruction(&Instruction::I64Sub); }
-                    I64BinOpKind::Mul => { func.instruction(&Instruction::I64Mul); }
-                    I64BinOpKind::Div => { func.instruction(&Instruction::I64DivS); }
+                    I64BinOpKind::Add => {
+                        func.instruction(&Instruction::I64Add);
+                    }
+                    I64BinOpKind::Sub => {
+                        func.instruction(&Instruction::I64Sub);
+                    }
+                    I64BinOpKind::Mul => {
+                        func.instruction(&Instruction::I64Mul);
+                    }
+                    I64BinOpKind::Div => {
+                        func.instruction(&Instruction::I64DivS);
+                    }
                 }
+
+                Ok(true)
             }
             ASTNode::I64UnaryOp { op, operand } => {
-                self.emit_node(func, operand)?;
+                let produces = self.emit_node(func, operand, import_func_indices)?;
+                if !produces {
+                    return Err("Unary operation requires a value-producing operand".to_string());
+                }
+
                 match op {
-                    I64UnaryOpKind::Not => { func.instruction(&Instruction::I64Eqz); }
-                }
-            }
-            ASTNode::I64Condition { op, left, right } => {
-                self.emit_node(func, left)?;
-                self.emit_node(func, right)?;
-                match op {
-                    ConditionOpKind::And => {
-                        // a && b: (a != 0) * (b != 0), result is 0 or 1
-                        func.instruction(&Instruction::I64Const(0));
-                        func.instruction(&Instruction::I64Ne);
-                        func.instruction(&Instruction::I64ExtendI32S);
-                        func.instruction(&Instruction::I64Const(0));
-                        func.instruction(&Instruction::I64Ne);
-                        func.instruction(&Instruction::I64ExtendI32S);
-                        func.instruction(&Instruction::I64Mul);
-                        return Ok(());
+                    I64UnaryOpKind::Not => {
+                        func.instruction(&Instruction::I64Eqz);
+                        func.instruction(&Instruction::I64ExtendI32U);
                     }
-                    ConditionOpKind::Or => {
-                        // a || b: ((a != 0) + (b != 0)) > 0, result is 0 or 1
-                        func.instruction(&Instruction::I64Const(0));
-                        func.instruction(&Instruction::I64Ne);
-                        func.instruction(&Instruction::I64ExtendI32S);
-                        func.instruction(&Instruction::I64Const(0));
-                        func.instruction(&Instruction::I64Ne);
-                        func.instruction(&Instruction::I64ExtendI32S);
-                        func.instruction(&Instruction::I64Add);
-                        func.instruction(&Instruction::I64Const(0));
-                        func.instruction(&Instruction::I64GtS);
-                        func.instruction(&Instruction::I64ExtendI32S);
-                        return Ok(());
+                }
+
+                Ok(true)
+            }
+            ASTNode::I64Condition { op, left, right } => match op {
+                ConditionOpKind::And => {
+                    let left_produces = self.emit_node(func, left, import_func_indices)?;
+                    if !left_produces {
+                        return Err("AND condition left operand must produce a value".to_string());
                     }
-                    ConditionOpKind::Eq => { func.instruction(&Instruction::I64Eq); }
-                    ConditionOpKind::Ne => { func.instruction(&Instruction::I64Ne); }
-                    ConditionOpKind::Lt => { func.instruction(&Instruction::I64LtS); }
-                    ConditionOpKind::Gt => { func.instruction(&Instruction::I64GtS); }
+                    func.instruction(&Instruction::I64Const(0));
+                    func.instruction(&Instruction::I64Ne);
+
+                    let right_produces = self.emit_node(func, right, import_func_indices)?;
+                    if !right_produces {
+                        return Err("AND condition right operand must produce a value".to_string());
+                    }
+                    func.instruction(&Instruction::I64Const(0));
+                    func.instruction(&Instruction::I64Ne);
+
+                    func.instruction(&Instruction::I32And);
+                    func.instruction(&Instruction::I64ExtendI32U);
+                    Ok(true)
                 }
-                func.instruction(&Instruction::I64ExtendI32S);
-            }
-            ASTNode::IfElse { condition, true_body, false_body } => {
-                self.emit_node(func, condition)?;
-                func.instruction(&Instruction::I64Eqz);
-                func.instruction(&Instruction::If(BlockType::Empty));
-                for node in false_body {
-                    self.emit_node(func, node)?;
+                ConditionOpKind::Or => {
+                    let left_produces = self.emit_node(func, left, import_func_indices)?;
+                    if !left_produces {
+                        return Err("OR condition left operand must produce a value".to_string());
+                    }
+                    func.instruction(&Instruction::I64Const(0));
+                    func.instruction(&Instruction::I64Ne);
+
+                    let right_produces = self.emit_node(func, right, import_func_indices)?;
+                    if !right_produces {
+                        return Err("OR condition right operand must produce a value".to_string());
+                    }
+                    func.instruction(&Instruction::I64Const(0));
+                    func.instruction(&Instruction::I64Ne);
+
+                    func.instruction(&Instruction::I32Or);
+                    func.instruction(&Instruction::I64ExtendI32U);
+                    Ok(true)
                 }
-                func.instruction(&Instruction::Else);
-                for node in true_body {
-                    self.emit_node(func, node)?;
+                ConditionOpKind::Eq
+                | ConditionOpKind::Ne
+                | ConditionOpKind::Lt
+                | ConditionOpKind::Gt => {
+                    let left_produces = self.emit_node(func, left, import_func_indices)?;
+                    let right_produces = self.emit_node(func, right, import_func_indices)?;
+                    if !left_produces || !right_produces {
+                        return Err(
+                            "Comparison condition requires value-producing operands".to_string()
+                        );
+                    }
+
+                    match op {
+                        ConditionOpKind::Eq => {
+                            func.instruction(&Instruction::I64Eq);
+                        }
+                        ConditionOpKind::Ne => {
+                            func.instruction(&Instruction::I64Ne);
+                        }
+                        ConditionOpKind::Lt => {
+                            func.instruction(&Instruction::I64LtS);
+                        }
+                        ConditionOpKind::Gt => {
+                            func.instruction(&Instruction::I64GtS);
+                        }
+                        ConditionOpKind::And | ConditionOpKind::Or => unreachable!(),
+                    }
+
+                    func.instruction(&Instruction::I64ExtendI32U);
+                    Ok(true)
                 }
-                func.instruction(&Instruction::End);
-            }
-            ASTNode::Call { args, .. } => {
+            },
+            ASTNode::Call {
+                import_module,
+                import_name,
+                args,
+            } => {
+                let signature = ImportSignature::for_import(import_module, import_name)
+                    .ok_or_else(|| {
+                        format!(
+                            "Unsupported import call '{}.{}' during WASM generation",
+                            import_module, import_name
+                        )
+                    })?;
+
+                if args.len() != signature.params.len() {
+                    return Err(format!(
+                        "Import '{}.{}' expects {} argument(s), found {}",
+                        import_module,
+                        import_name,
+                        signature.params.len(),
+                        args.len()
+                    ));
+                }
+
                 for arg in args {
-                    self.emit_node(func, arg)?;
+                    let produced = self.emit_node(func, arg, import_func_indices)?;
+                    if !produced {
+                        return Err(format!(
+                            "Import argument for '{}.{}' does not produce a value",
+                            import_module, import_name
+                        ));
+                    }
                 }
-                func.instruction(&Instruction::Call(0));
-                func.instruction(&Instruction::Drop);
+
+                let key = import_key(import_module, import_name);
+                let func_index = import_func_indices
+                    .get(&key)
+                    .ok_or_else(|| format!("Missing function index for import '{}'", key))?;
+
+                func.instruction(&Instruction::Call(*func_index));
+                Ok(signature.returns_value())
             }
-            ASTNode::Nop => {}
+            ASTNode::Nop => Ok(false),
         }
-        Ok(())
     }
+}
+
+fn import_key(module: &str, name: &str) -> String {
+    format!("{}.{}", module, name)
 }
 
 #[cfg(test)]
@@ -201,13 +362,11 @@ mod tests {
 
     fn build_simple_ast() -> AST {
         AST {
-            body: vec![
-                ASTNode::I64BinOp {
-                    op: I64BinOpKind::Add,
-                    left: Box::new(ASTNode::I64Const(10)),
-                    right: Box::new(ASTNode::I64Const(20)),
-                },
-            ],
+            body: vec![ASTNode::I64BinOp {
+                op: I64BinOpKind::Add,
+                left: Box::new(ASTNode::I64Const(10)),
+                right: Box::new(ASTNode::I64Const(20)),
+            }],
             imports: vec![],
         }
     }
@@ -222,8 +381,8 @@ mod tests {
                 },
                 ASTNode::I64BinOp {
                     op: I64BinOpKind::Mul,
-                    left: Box::new(ASTNode::I64Const(0)),
-                    right: Box::new(ASTNode::I64Const(0)),
+                    left: Box::new(ASTNode::I64Const(2)),
+                    right: Box::new(ASTNode::I64Const(7)),
                 },
                 ASTNode::I64BinOp {
                     op: I64BinOpKind::Sub,
@@ -257,8 +416,10 @@ mod tests {
         let ast2 = build_arithmetic_ast();
         let result2 = gen.generate(&ast2).unwrap();
 
-        assert_ne!(result1.wasm_bytes, result2.wasm_bytes,
-            "Different ASTs must produce different WASM bytecode");
+        assert_ne!(
+            result1.wasm_bytes, result2.wasm_bytes,
+            "Different ASTs must produce different WASM bytecode"
+        );
     }
 
     #[test]
@@ -269,20 +430,22 @@ mod tests {
 
         let engine = wasmtime::Engine::default();
         let validation = wasmtime::Module::validate(&engine, &result.wasm_bytes);
-        assert!(validation.is_ok(), "WASM validation failed: {:?}", validation.err());
+        assert!(
+            validation.is_ok(),
+            "WASM validation failed: {:?}",
+            validation.err()
+        );
     }
 
     #[test]
     fn test_arithmetic_wasm_executes_correctly() {
         let gen = WasmGenerator::new();
         let ast = AST {
-            body: vec![
-                ASTNode::I64BinOp {
-                    op: I64BinOpKind::Add,
-                    left: Box::new(ASTNode::I64Const(15)),
-                    right: Box::new(ASTNode::I64Const(25)),
-                },
-            ],
+            body: vec![ASTNode::I64BinOp {
+                op: I64BinOpKind::Add,
+                left: Box::new(ASTNode::I64Const(15)),
+                right: Box::new(ASTNode::I64Const(25)),
+            }],
             imports: vec![],
         };
         let result = gen.generate(&ast).unwrap();
@@ -291,7 +454,9 @@ mod tests {
         let module = wasmtime::Module::new(&engine, &result.wasm_bytes).unwrap();
         let mut store = wasmtime::Store::new(&engine, ());
         let instance = wasmtime::Instance::new(&mut store, &module, &[]).unwrap();
-        let main = instance.get_typed_func::<(), i64>(&mut store, "main").unwrap();
+        let main = instance
+            .get_typed_func::<(), i64>(&mut store, "main")
+            .unwrap();
         let val = main.call(&mut store, ()).unwrap();
         assert_eq!(val, 40, "15 + 25 should equal 40");
     }
@@ -300,13 +465,11 @@ mod tests {
     fn test_divide_by_zero_returns_error() {
         let gen = WasmGenerator::new();
         let ast = AST {
-            body: vec![
-                ASTNode::I64BinOp {
-                    op: I64BinOpKind::Div,
-                    left: Box::new(ASTNode::I64Const(10)),
-                    right: Box::new(ASTNode::I64Const(0)),
-                },
-            ],
+            body: vec![ASTNode::I64BinOp {
+                op: I64BinOpKind::Div,
+                left: Box::new(ASTNode::I64Const(10)),
+                right: Box::new(ASTNode::I64Const(0)),
+            }],
             imports: vec![],
         };
         assert!(gen.generate(&ast).is_err());
@@ -317,17 +480,15 @@ mod tests {
         let gen = WasmGenerator::new();
         // (10 + 20) * 2
         let ast = AST {
-            body: vec![
-                ASTNode::I64BinOp {
-                    op: I64BinOpKind::Mul,
-                    left: Box::new(ASTNode::I64BinOp {
-                        op: I64BinOpKind::Add,
-                        left: Box::new(ASTNode::I64Const(10)),
-                        right: Box::new(ASTNode::I64Const(20)),
-                    }),
-                    right: Box::new(ASTNode::I64Const(2)),
-                },
-            ],
+            body: vec![ASTNode::I64BinOp {
+                op: I64BinOpKind::Mul,
+                left: Box::new(ASTNode::I64BinOp {
+                    op: I64BinOpKind::Add,
+                    left: Box::new(ASTNode::I64Const(10)),
+                    right: Box::new(ASTNode::I64Const(20)),
+                }),
+                right: Box::new(ASTNode::I64Const(2)),
+            }],
             imports: vec![],
         };
         let result = gen.generate(&ast).unwrap();
@@ -336,8 +497,48 @@ mod tests {
         let module = wasmtime::Module::new(&engine, &result.wasm_bytes).unwrap();
         let mut store = wasmtime::Store::new(&engine, ());
         let instance = wasmtime::Instance::new(&mut store, &module, &[]).unwrap();
-        let main = instance.get_typed_func::<(), i64>(&mut store, "main").unwrap();
+        let main = instance
+            .get_typed_func::<(), i64>(&mut store, "main")
+            .unwrap();
         let val = main.call(&mut store, ()).unwrap();
         assert_eq!(val, 60, "(10 + 20) * 2 should equal 60");
+    }
+
+    #[test]
+    fn test_storage_import_wasm_validates() {
+        let gen = WasmGenerator::new();
+        let ast = AST {
+            body: vec![
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_write_storage".to_string(),
+                    args: vec![ASTNode::I64Const(7), ASTNode::I64Const(99)],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_read_storage".to_string(),
+                    args: vec![ASTNode::I64Const(7)],
+                },
+            ],
+            imports: vec![
+                ("baals".to_string(), "baals_write_storage".to_string()),
+                ("baals".to_string(), "baals_read_storage".to_string()),
+            ],
+        };
+
+        let result = gen.generate(&ast).unwrap();
+        let engine = wasmtime::Engine::default();
+        let validation = wasmtime::Module::validate(&engine, &result.wasm_bytes);
+        assert!(
+            validation.is_ok(),
+            "WASM validation failed: {:?}",
+            validation.err()
+        );
+        assert!(result
+            .imports
+            .contains(&"baals.baals_read_storage".to_string()));
+        assert!(result
+            .imports
+            .contains(&"baals.baals_write_storage".to_string()));
     }
 }

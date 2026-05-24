@@ -1,22 +1,25 @@
 //! Contract compilation pipeline
 
-mod graph_ir;
 mod ast;
-mod wasm_gen;
-mod validator;
 mod executor;
+mod graph_ir;
+mod validator;
+mod wasm_gen;
 
 use crate::{
     config::Config,
     error::{CanvasError, CanvasResult},
-    types::{CompilationResult, VisualGraph, ContractABI, FunctionABI, ParameterABI, StateMutability, ValueType},
+    types::{
+        CompilationResult, ContractABI, FunctionABI, ParameterABI, StateMutability, ValueType,
+        VisualGraph,
+    },
 };
 
-pub use validator::Validator;
-pub use graph_ir::GraphIR;
 pub use ast::AST;
-pub use wasm_gen::WasmGenerator;
 pub use executor::GraphExecutor;
+pub use graph_ir::GraphIR;
+pub use validator::Validator;
+pub use wasm_gen::WasmGenerator;
 
 /// Main compiler for converting visual graphs to WASM
 pub struct Compiler {
@@ -37,12 +40,11 @@ impl Compiler {
         let graph_ir = GraphIR::from_visual_graph(graph);
 
         // Step 2: Generate AST from Graph IR
-        let ast = AST::from_graph_ir(&graph_ir);
+        let ast = AST::from_graph_ir(&graph_ir).map_err(CanvasError::Compilation)?;
 
         // Step 3: Generate WASM from AST
         let wasm_gen = WasmGenerator::new();
-        let wasm_result = wasm_gen.generate(&ast)
-            .map_err(CanvasError::Compilation)?;
+        let wasm_result = wasm_gen.generate(&ast).map_err(CanvasError::Compilation)?;
 
         // Step 3.5: Validate generated WASM with wasmtime
         let engine = wasmtime::Engine::default();
@@ -74,7 +76,11 @@ impl Compiler {
     }
 
     /// Generate ABI from visual graph
-    fn generate_abi(&self, graph: &VisualGraph, wasm_result: &wasm_gen::WasmGenResult) -> ContractABI {
+    fn generate_abi(
+        &self,
+        graph: &VisualGraph,
+        wasm_result: &wasm_gen::WasmGenResult,
+    ) -> ContractABI {
         let mut functions = Vec::new();
 
         // Generate function ABI from graph nodes
