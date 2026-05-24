@@ -35,6 +35,18 @@ fn hash_bytes_to_i64(bytes: &[u8]) -> i64 {
     i64::from_be_bytes(out)
 }
 
+fn mix_tagged_i64(tag: &str, values: &[i64]) -> i64 {
+    let mut hasher = Sha256::new();
+    hasher.update(tag.as_bytes());
+    for value in values {
+        hasher.update(value.to_be_bytes());
+    }
+    let digest = hasher.finalize();
+    let mut out = [0u8; 8];
+    out.copy_from_slice(&digest[..8]);
+    i64::from_be_bytes(out)
+}
+
 impl WasmRuntime {
     pub fn new(_config: &Config) -> CanvasResult<Self> {
         let mut config_wasm = wasmtime::Config::new();
@@ -283,6 +295,220 @@ impl WasmRuntime {
                 "baals",
                 "baals_transfer_value",
                 |_recipient_hash: i64, _amount: i64| {},
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "crypto",
+                "crypto_verify_signature",
+                |message_hash: i64, signature_hash: i64, public_key_hash: i64| -> i64 {
+                    if message_hash != 0 && signature_hash != 0 && public_key_hash != 0 {
+                        1
+                    } else {
+                        0
+                    }
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap("crypto", "crypto_decode_proof", |proof_hash: i64| -> i64 {
+                mix_tagged_i64("crypto_decode_proof", &[proof_hash])
+            })
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "chrononode",
+                "chrononode_fetch_block",
+                |chain_hash: i64, height: i64| -> i64 {
+                    mix_tagged_i64("chrononode_fetch_block", &[chain_hash, height])
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "chrononode",
+                "chrononode_fetch_checkpoint",
+                |chain_hash: i64, from_height: i64, to_height: i64| -> i64 {
+                    mix_tagged_i64(
+                        "chrononode_fetch_checkpoint",
+                        &[chain_hash, from_height, to_height],
+                    )
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "chrononode",
+                "chrononode_verify_proof",
+                |proof_hash: i64, data_hash: i64| -> i64 {
+                    if proof_hash != 0 && data_hash != 0 {
+                        1
+                    } else {
+                        0
+                    }
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "chrononode",
+                "chrononode_extract_event",
+                |block_hash: i64, event_type_hash: i64| -> i64 {
+                    mix_tagged_i64("chrononode_extract_event", &[block_hash, event_type_hash])
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "chrononode",
+                "chrononode_extract_tx_by_sender",
+                |block_hash: i64, sender_hash: i64| -> i64 {
+                    mix_tagged_i64(
+                        "chrononode_extract_tx_by_sender",
+                        &[block_hash, sender_hash],
+                    )
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "chrononode",
+                "chrononode_extract_tx_by_recipient",
+                |block_hash: i64, recipient_hash: i64| -> i64 {
+                    mix_tagged_i64(
+                        "chrononode_extract_tx_by_recipient",
+                        &[block_hash, recipient_hash],
+                    )
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "chrononode",
+                "chrononode_verify_archive_range",
+                |chain_hash: i64, from_height: i64, to_height: i64, proof_hash: i64| -> i64 {
+                    if chain_hash != 0 && proof_hash != 0 && from_height <= to_height {
+                        1
+                    } else {
+                        0
+                    }
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "resurgence",
+                "resurgence_check_token_age",
+                |token_hash: i64, current_block: i64| -> i64 {
+                    mix_tagged_i64("resurgence_check_token_age", &[token_hash, current_block])
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "resurgence",
+                "resurgence_check_token_activity_window",
+                |token_hash: i64, window_start: i64, window_end: i64| -> i64 {
+                    if token_hash != 0 && window_start <= window_end {
+                        1
+                    } else {
+                        0
+                    }
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "resurgence",
+                "resurgence_check_liquidity_dormancy",
+                |pool_hash: i64, threshold: i64| -> i64 {
+                    mix_tagged_i64(
+                        "resurgence_check_liquidity_dormancy",
+                        &[pool_hash, threshold],
+                    )
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "resurgence",
+                "resurgence_check_governance_dormancy",
+                |token_hash: i64, window: i64| -> i64 {
+                    mix_tagged_i64(
+                        "resurgence_check_governance_dormancy",
+                        &[token_hash, window],
+                    )
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "resurgence",
+                "resurgence_calculate_dormancy_score",
+                |age_score: i64, liquidity_score: i64, governance_score: i64| -> i64 {
+                    ((age_score.max(0) * 4)
+                        + (liquidity_score.max(0) * 3)
+                        + (governance_score.max(0) * 3))
+                        / 10
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "resurgence",
+                "resurgence_normalize_dead_coin_risk",
+                |raw_score: i64| -> i64 { raw_score.clamp(0, 100) },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "resurgence",
+                "resurgence_generate_dormancy_proof",
+                |token_hash: i64, dormancy_score: i64, evidence_hash: i64| -> i64 {
+                    mix_tagged_i64(
+                        "resurgence_generate_dormancy_proof",
+                        &[token_hash, dormancy_score, evidence_hash],
+                    )
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "resurgence",
+                "resurgence_emit_dormancy_oracle_result",
+                |mut caller: wasmtime::Caller<'_, HostState>,
+                 token_hash: i64,
+                 score: i64,
+                 label_hash: i64,
+                 proof_hash: i64| {
+                    let mut data = HashMap::new();
+                    data.insert("token_hash".to_string(), serde_json::json!(token_hash));
+                    data.insert("score".to_string(), serde_json::json!(score));
+                    data.insert("label_hash".to_string(), serde_json::json!(label_hash));
+                    data.insert("proof_hash".to_string(), serde_json::json!(proof_hash));
+                    caller.data_mut().events.push(Event {
+                        name: "DormancyOracleResult".to_string(),
+                        data,
+                        indexed_data: vec![],
+                    });
+                },
             )
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
@@ -610,6 +836,231 @@ mod tests {
             .unwrap();
 
         assert!(result.output["result"].as_i64().unwrap_or(0) != 0);
+        assert_eq!(result.events.len(), 1);
+    }
+
+    #[test]
+    fn test_simulation_supports_crypto_chrono_resurgence_import_families() {
+        let config = Config::default();
+        let runtime = WasmRuntime::new(&config).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+
+        let mut types = TypeSection::new();
+        // type 0: main () -> i64
+        types.function([], [ValType::I64]);
+        // type 1: (i64, i64, i64) -> i64
+        types.function([ValType::I64, ValType::I64, ValType::I64], [ValType::I64]);
+        // type 2: (i64) -> i64
+        types.function([ValType::I64], [ValType::I64]);
+        // type 3: (i64, i64) -> i64
+        types.function([ValType::I64, ValType::I64], [ValType::I64]);
+        // type 4: (i64, i64, i64) -> i64
+        types.function([ValType::I64, ValType::I64, ValType::I64], [ValType::I64]);
+        // type 5: (i64, i64, i64, i64) -> i64
+        types.function(
+            [ValType::I64, ValType::I64, ValType::I64, ValType::I64],
+            [ValType::I64],
+        );
+        // type 6: (i64, i64, i64, i64) -> ()
+        types.function([ValType::I64, ValType::I64, ValType::I64, ValType::I64], []);
+        module.section(&types);
+
+        let mut imports = ImportSection::new();
+        imports.import("crypto", "crypto_verify_signature", EntityType::Function(1));
+        imports.import("crypto", "crypto_decode_proof", EntityType::Function(2));
+        imports.import(
+            "chrononode",
+            "chrononode_fetch_block",
+            EntityType::Function(3),
+        );
+        imports.import(
+            "chrononode",
+            "chrononode_fetch_checkpoint",
+            EntityType::Function(4),
+        );
+        imports.import(
+            "chrononode",
+            "chrononode_verify_proof",
+            EntityType::Function(3),
+        );
+        imports.import(
+            "chrononode",
+            "chrononode_extract_event",
+            EntityType::Function(3),
+        );
+        imports.import(
+            "chrononode",
+            "chrononode_extract_tx_by_sender",
+            EntityType::Function(3),
+        );
+        imports.import(
+            "chrononode",
+            "chrononode_extract_tx_by_recipient",
+            EntityType::Function(3),
+        );
+        imports.import(
+            "chrononode",
+            "chrononode_verify_archive_range",
+            EntityType::Function(5),
+        );
+        imports.import(
+            "resurgence",
+            "resurgence_check_token_age",
+            EntityType::Function(3),
+        );
+        imports.import(
+            "resurgence",
+            "resurgence_check_token_activity_window",
+            EntityType::Function(4),
+        );
+        imports.import(
+            "resurgence",
+            "resurgence_check_liquidity_dormancy",
+            EntityType::Function(3),
+        );
+        imports.import(
+            "resurgence",
+            "resurgence_check_governance_dormancy",
+            EntityType::Function(3),
+        );
+        imports.import(
+            "resurgence",
+            "resurgence_calculate_dormancy_score",
+            EntityType::Function(4),
+        );
+        imports.import(
+            "resurgence",
+            "resurgence_normalize_dead_coin_risk",
+            EntityType::Function(2),
+        );
+        imports.import(
+            "resurgence",
+            "resurgence_generate_dormancy_proof",
+            EntityType::Function(4),
+        );
+        imports.import(
+            "resurgence",
+            "resurgence_emit_dormancy_oracle_result",
+            EntityType::Function(6),
+        );
+        module.section(&imports);
+
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+
+        let mut exports = ExportSection::new();
+        // 17 imports + local offset 0
+        exports.export("main", ExportKind::Func, 17);
+        module.section(&exports);
+
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![(1, ValType::I64)]);
+
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Const(2));
+        func.instruction(&Instruction::I64Const(3));
+        func.instruction(&Instruction::Call(0)); // crypto_verify_signature
+        func.instruction(&Instruction::LocalSet(0));
+
+        func.instruction(&Instruction::I64Const(4));
+        func.instruction(&Instruction::Call(1)); // crypto_decode_proof
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(5));
+        func.instruction(&Instruction::I64Const(6));
+        func.instruction(&Instruction::Call(2)); // chrononode_fetch_block
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(7));
+        func.instruction(&Instruction::I64Const(8));
+        func.instruction(&Instruction::I64Const(9));
+        func.instruction(&Instruction::Call(3)); // chrononode_fetch_checkpoint
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(10));
+        func.instruction(&Instruction::I64Const(11));
+        func.instruction(&Instruction::Call(4)); // chrononode_verify_proof
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(12));
+        func.instruction(&Instruction::I64Const(13));
+        func.instruction(&Instruction::Call(5)); // chrononode_extract_event
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(14));
+        func.instruction(&Instruction::I64Const(15));
+        func.instruction(&Instruction::Call(6)); // chrononode_extract_tx_by_sender
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(16));
+        func.instruction(&Instruction::I64Const(17));
+        func.instruction(&Instruction::Call(7)); // chrononode_extract_tx_by_recipient
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(18));
+        func.instruction(&Instruction::I64Const(19));
+        func.instruction(&Instruction::I64Const(20));
+        func.instruction(&Instruction::I64Const(21));
+        func.instruction(&Instruction::Call(8)); // chrononode_verify_archive_range
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(22));
+        func.instruction(&Instruction::I64Const(23));
+        func.instruction(&Instruction::Call(9)); // resurgence_check_token_age
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(24));
+        func.instruction(&Instruction::I64Const(25));
+        func.instruction(&Instruction::I64Const(26));
+        func.instruction(&Instruction::Call(10)); // resurgence_check_token_activity_window
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(27));
+        func.instruction(&Instruction::I64Const(28));
+        func.instruction(&Instruction::Call(11)); // resurgence_check_liquidity_dormancy
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(29));
+        func.instruction(&Instruction::I64Const(30));
+        func.instruction(&Instruction::Call(12)); // resurgence_check_governance_dormancy
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(31));
+        func.instruction(&Instruction::I64Const(32));
+        func.instruction(&Instruction::I64Const(33));
+        func.instruction(&Instruction::Call(13)); // resurgence_calculate_dormancy_score
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(34));
+        func.instruction(&Instruction::Call(14)); // resurgence_normalize_dead_coin_risk
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(35));
+        func.instruction(&Instruction::I64Const(36));
+        func.instruction(&Instruction::I64Const(37));
+        func.instruction(&Instruction::Call(15)); // resurgence_generate_dormancy_proof
+        func.instruction(&Instruction::Drop);
+
+        func.instruction(&Instruction::I64Const(38));
+        func.instruction(&Instruction::I64Const(39));
+        func.instruction(&Instruction::I64Const(40));
+        func.instruction(&Instruction::I64Const(41));
+        func.instruction(&Instruction::Call(16)); // resurgence_emit_dormancy_oracle_result
+
+        func.instruction(&Instruction::LocalGet(0));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+
+        let wasm_bytes = module.finish();
+        let result = runtime
+            .simulate(&wasm_bytes, serde_json::json!({}), 20_000)
+            .unwrap();
+
+        assert_eq!(result.output["result"].as_i64().unwrap_or(0), 1);
         assert_eq!(result.events.len(), 1);
     }
 

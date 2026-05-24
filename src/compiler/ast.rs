@@ -348,6 +348,424 @@ impl AST {
                         args: vec![recipient_expr, amount_expr],
                     }
                 }
+                "VerifySignature" => {
+                    ast.register_import("crypto", "crypto_verify_signature");
+                    let message_expr = resolve_input_expr(
+                        "message",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let signature_expr = resolve_input_expr(
+                        "signature",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let public_key_expr = resolve_input_expr(
+                        "public_key",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "crypto".to_string(),
+                        import_name: "crypto_verify_signature".to_string(),
+                        args: vec![message_expr, signature_expr, public_key_expr],
+                    }
+                }
+                "DecodeProof" => {
+                    ast.register_import("crypto", "crypto_decode_proof");
+                    let proof_expr = resolve_input_expr(
+                        "proof_json",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "crypto".to_string(),
+                        import_name: "crypto_decode_proof".to_string(),
+                        args: vec![proof_expr],
+                    }
+                }
+                "FetchChronoBlock" => {
+                    ast.register_import("chrononode", "chrononode_fetch_block");
+                    let chain_expr = resolve_storage_key_expr(
+                        "chain_id",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let height_expr = resolve_input_expr(
+                        "height",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "chrononode".to_string(),
+                        import_name: "chrononode_fetch_block".to_string(),
+                        args: vec![chain_expr, height_expr],
+                    }
+                }
+                "FetchCheckpoint" => {
+                    ast.register_import("chrononode", "chrononode_fetch_checkpoint");
+                    let chain_expr = resolve_storage_key_expr(
+                        "chain_id",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let from_expr = resolve_input_expr(
+                        "from_height",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let to_expr = resolve_input_expr(
+                        "to_height",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "chrononode".to_string(),
+                        import_name: "chrononode_fetch_checkpoint".to_string(),
+                        args: vec![chain_expr, from_expr, to_expr],
+                    }
+                }
+                "VerifyChronoProof" => {
+                    ast.register_import("chrononode", "chrononode_verify_proof");
+                    let proof_expr = resolve_input_expr(
+                        "proof",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let data_expr =
+                        resolve_input_expr("data", ir, node_id, &output_exprs, &ir_node.properties);
+                    ASTNode::Call {
+                        import_module: "chrononode".to_string(),
+                        import_name: "chrononode_verify_proof".to_string(),
+                        args: vec![proof_expr, data_expr],
+                    }
+                }
+                "ExtractChronoEvent" => {
+                    ast.register_import("chrononode", "chrononode_extract_event");
+                    let block_data_expr = resolve_input_expr(
+                        "block_data",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let event_type_expr = resolve_storage_key_expr(
+                        "event_type",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "chrononode".to_string(),
+                        import_name: "chrononode_extract_event".to_string(),
+                        args: vec![block_data_expr, event_type_expr],
+                    }
+                }
+                "ExtractTxBySender" => {
+                    ast.register_import("chrononode", "chrononode_extract_tx_by_sender");
+                    let block_data_expr = resolve_input_expr(
+                        "block_data",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let sender_expr = resolve_storage_key_expr(
+                        "sender",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "chrononode".to_string(),
+                        import_name: "chrononode_extract_tx_by_sender".to_string(),
+                        args: vec![block_data_expr, sender_expr],
+                    }
+                }
+                "ExtractTxByRecipient" => {
+                    ast.register_import("chrononode", "chrononode_extract_tx_by_recipient");
+                    let block_data_expr = resolve_input_expr(
+                        "block_data",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let recipient_expr = resolve_storage_key_expr(
+                        "recipient",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "chrononode".to_string(),
+                        import_name: "chrononode_extract_tx_by_recipient".to_string(),
+                        args: vec![block_data_expr, recipient_expr],
+                    }
+                }
+                "VerifyArchiveRange" => {
+                    ast.register_import("chrononode", "chrononode_verify_archive_range");
+                    let chain_expr = resolve_storage_key_expr(
+                        "chain_id",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let from_expr = resolve_input_expr(
+                        "from_height",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let to_expr = resolve_input_expr(
+                        "to_height",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let proof_expr = resolve_input_expr(
+                        "proof",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "chrononode".to_string(),
+                        import_name: "chrononode_verify_archive_range".to_string(),
+                        args: vec![chain_expr, from_expr, to_expr, proof_expr],
+                    }
+                }
+                "CheckTokenAge" => {
+                    ast.register_import("resurgence", "resurgence_check_token_age");
+                    let token_expr = resolve_storage_key_expr(
+                        "token_address",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let current_block_expr = resolve_input_expr(
+                        "current_block",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "resurgence".to_string(),
+                        import_name: "resurgence_check_token_age".to_string(),
+                        args: vec![token_expr, current_block_expr],
+                    }
+                }
+                "CheckTokenActivityWindow" => {
+                    ast.register_import("resurgence", "resurgence_check_token_activity_window");
+                    let token_expr = resolve_storage_key_expr(
+                        "token_address",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let start_expr = resolve_input_expr(
+                        "window_start",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let end_expr = resolve_input_expr(
+                        "window_end",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "resurgence".to_string(),
+                        import_name: "resurgence_check_token_activity_window".to_string(),
+                        args: vec![token_expr, start_expr, end_expr],
+                    }
+                }
+                "CheckLiquidityDormancy" => {
+                    ast.register_import("resurgence", "resurgence_check_liquidity_dormancy");
+                    let pool_expr = resolve_storage_key_expr(
+                        "pool_address",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let threshold_expr = resolve_input_expr(
+                        "liquidity_threshold",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "resurgence".to_string(),
+                        import_name: "resurgence_check_liquidity_dormancy".to_string(),
+                        args: vec![pool_expr, threshold_expr],
+                    }
+                }
+                "CheckGovernanceDormancy" => {
+                    ast.register_import("resurgence", "resurgence_check_governance_dormancy");
+                    let token_expr = resolve_storage_key_expr(
+                        "token_address",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let window_expr = resolve_input_expr(
+                        "activity_window",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "resurgence".to_string(),
+                        import_name: "resurgence_check_governance_dormancy".to_string(),
+                        args: vec![token_expr, window_expr],
+                    }
+                }
+                "CalculateDormancyScore" => {
+                    ast.register_import("resurgence", "resurgence_calculate_dormancy_score");
+                    let age_expr = resolve_input_expr(
+                        "age_score",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let liquidity_expr = resolve_input_expr(
+                        "liquidity_score",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let governance_expr = resolve_input_expr(
+                        "governance_score",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "resurgence".to_string(),
+                        import_name: "resurgence_calculate_dormancy_score".to_string(),
+                        args: vec![age_expr, liquidity_expr, governance_expr],
+                    }
+                }
+                "NormalizeDeadCoinRisk" => {
+                    ast.register_import("resurgence", "resurgence_normalize_dead_coin_risk");
+                    let raw_score_expr = resolve_input_expr(
+                        "raw_score",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "resurgence".to_string(),
+                        import_name: "resurgence_normalize_dead_coin_risk".to_string(),
+                        args: vec![raw_score_expr],
+                    }
+                }
+                "GenerateDormancyProof" => {
+                    ast.register_import("resurgence", "resurgence_generate_dormancy_proof");
+                    let token_expr = resolve_storage_key_expr(
+                        "token_address",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let score_expr = resolve_input_expr(
+                        "dormancy_score",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let evidence_expr = resolve_input_expr(
+                        "evidence_sources",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "resurgence".to_string(),
+                        import_name: "resurgence_generate_dormancy_proof".to_string(),
+                        args: vec![token_expr, score_expr, evidence_expr],
+                    }
+                }
+                "EmitDormancyOracleResult" => {
+                    ast.register_import("resurgence", "resurgence_emit_dormancy_oracle_result");
+                    let token_expr = resolve_storage_key_expr(
+                        "token_address",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let score_expr = resolve_input_expr(
+                        "dormancy_score",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let label_expr = resolve_storage_key_expr(
+                        "risk_label",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let proof_hash_expr = resolve_input_expr(
+                        "proof_hash",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "resurgence".to_string(),
+                        import_name: "resurgence_emit_dormancy_oracle_result".to_string(),
+                        args: vec![token_expr, score_expr, label_expr, proof_hash_expr],
+                    }
+                }
                 "If" => ASTNode::Nop,
                 "Start" | "End" => ASTNode::Nop,
                 _ => unreachable!("unsupported node types are rejected above"),
@@ -422,6 +840,72 @@ impl AST {
                         outputs.insert("success".to_string(), node_flow_guard.clone());
                         outputs.insert("result".to_string(), node_flow_guard.clone());
                     }
+                    "VerifySignature" => {
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "DecodeProof" => {
+                        outputs.insert("chain_id".to_string(), finalized_node.clone());
+                        outputs.insert("address".to_string(), finalized_node.clone());
+                        outputs.insert("dormant_since_block".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "FetchChronoBlock" => {
+                        outputs.insert("block_data".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "FetchCheckpoint" => {
+                        outputs.insert("checkpoint".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "VerifyChronoProof" => {
+                        outputs.insert("valid".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "ExtractChronoEvent" => {
+                        outputs.insert("event_data".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "ExtractTxBySender" | "ExtractTxByRecipient" => {
+                        outputs.insert("transactions".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "VerifyArchiveRange" => {
+                        outputs.insert("valid".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "CheckTokenAge" => {
+                        outputs.insert("age_blocks".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "CheckTokenActivityWindow" => {
+                        outputs.insert("active".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "CheckLiquidityDormancy" => {
+                        outputs.insert("dormant".to_string(), finalized_node.clone());
+                        outputs.insert("liquidity_score".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "CheckGovernanceDormancy" => {
+                        outputs.insert("dormant".to_string(), finalized_node.clone());
+                        outputs.insert("governance_score".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "CalculateDormancyScore" => {
+                        outputs.insert("dormancy_score".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "NormalizeDeadCoinRisk" => {
+                        outputs.insert("normalized_score".to_string(), finalized_node.clone());
+                        outputs.insert("risk_label".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "GenerateDormancyProof" => {
+                        outputs.insert("proof_hash".to_string(), finalized_node.clone());
+                        outputs.insert("manifest".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "EmitDormancyOracleResult" => {}
                     "EmitEvent" | "Revert" => {}
                     _ => {
                         outputs.insert("result".to_string(), finalized_node.clone());
@@ -479,6 +963,23 @@ fn is_compilable_node_type(node_type: &str) -> bool {
             | "CallContract"
             | "ReadCallResult"
             | "TransferValue"
+            | "VerifySignature"
+            | "DecodeProof"
+            | "FetchChronoBlock"
+            | "FetchCheckpoint"
+            | "VerifyChronoProof"
+            | "ExtractChronoEvent"
+            | "ExtractTxBySender"
+            | "ExtractTxByRecipient"
+            | "VerifyArchiveRange"
+            | "CheckTokenAge"
+            | "CheckTokenActivityWindow"
+            | "CheckLiquidityDormancy"
+            | "CheckGovernanceDormancy"
+            | "CalculateDormancyScore"
+            | "NormalizeDeadCoinRisk"
+            | "GenerateDormancyProof"
+            | "EmitDormancyOracleResult"
     )
 }
 
@@ -489,13 +990,16 @@ fn maybe_guard_node_for_flow(node_type: &str, node: ASTNode, flow_guard: ASTNode
 
     match node_type {
         // Storage calls are side-effectful and must only run when flow is active.
-        "WriteStorage" | "EmitEvent" | "Revert" | "CallContract" | "TransferValue" => {
-            ASTNode::IfElse {
-                condition: Box::new(flow_guard),
-                true_body: vec![node],
-                false_body: Vec::new(),
-            }
-        }
+        "WriteStorage"
+        | "EmitEvent"
+        | "Revert"
+        | "CallContract"
+        | "TransferValue"
+        | "EmitDormancyOracleResult" => ASTNode::IfElse {
+            condition: Box::new(flow_guard),
+            true_body: vec![node],
+            false_body: Vec::new(),
+        },
         "ReadStorage" => ASTNode::I64IfElse {
             condition: Box::new(flow_guard),
             when_true: Box::new(node),
@@ -672,14 +1176,14 @@ mod tests {
         ));
         graph.add_node(VisualNode::new(
             Uuid::new_v4(),
-            "VerifySignature",
+            "UnknownNodeType",
             Position::new(150.0, 0.0),
         ));
 
         let ir = GraphIR::from_visual_graph(&graph);
         let err = AST::from_graph_ir(&ir).unwrap_err();
 
-        assert!(err.contains("VerifySignature"));
+        assert!(err.contains("UnknownNodeType"));
         assert!(err.contains("not currently compilable"));
     }
 
@@ -905,6 +1409,121 @@ mod tests {
             ("baals".to_string(), "baals_read_call_result".to_string()),
             ("baals".to_string(), "baals_transfer_value".to_string()),
             ("baals".to_string(), "baals_revert".to_string()),
+        ];
+
+        for import in expected_imports {
+            assert!(
+                ast.imports.contains(&import),
+                "Expected import {:?} to be registered",
+                import
+            );
+        }
+    }
+
+    #[test]
+    fn test_crypto_chrono_resurgence_nodes_compile_to_imported_calls() {
+        let mut graph = VisualGraph::new("extended-node-families");
+        graph.add_node(VisualNode::new(
+            Uuid::new_v4(),
+            "Start",
+            Position::new(0.0, 0.0),
+        ));
+
+        let node_types = [
+            "VerifySignature",
+            "DecodeProof",
+            "FetchChronoBlock",
+            "FetchCheckpoint",
+            "VerifyChronoProof",
+            "ExtractChronoEvent",
+            "ExtractTxBySender",
+            "ExtractTxByRecipient",
+            "VerifyArchiveRange",
+            "CheckTokenAge",
+            "CheckTokenActivityWindow",
+            "CheckLiquidityDormancy",
+            "CheckGovernanceDormancy",
+            "CalculateDormancyScore",
+            "NormalizeDeadCoinRisk",
+            "GenerateDormancyProof",
+            "EmitDormancyOracleResult",
+        ];
+
+        for (idx, node_type) in node_types.iter().enumerate() {
+            graph.add_node(VisualNode::new(
+                Uuid::new_v4(),
+                *node_type,
+                Position::new((idx as f64 + 1.0) * 120.0, 0.0),
+            ));
+        }
+
+        let ir = GraphIR::from_visual_graph(&graph);
+        let ast = AST::from_graph_ir(&ir)
+            .expect("Crypto/ChronoNode/Resurgence nodes should be compilable");
+
+        let expected_imports = [
+            ("crypto".to_string(), "crypto_verify_signature".to_string()),
+            ("crypto".to_string(), "crypto_decode_proof".to_string()),
+            (
+                "chrononode".to_string(),
+                "chrononode_fetch_block".to_string(),
+            ),
+            (
+                "chrononode".to_string(),
+                "chrononode_fetch_checkpoint".to_string(),
+            ),
+            (
+                "chrononode".to_string(),
+                "chrononode_verify_proof".to_string(),
+            ),
+            (
+                "chrononode".to_string(),
+                "chrononode_extract_event".to_string(),
+            ),
+            (
+                "chrononode".to_string(),
+                "chrononode_extract_tx_by_sender".to_string(),
+            ),
+            (
+                "chrononode".to_string(),
+                "chrononode_extract_tx_by_recipient".to_string(),
+            ),
+            (
+                "chrononode".to_string(),
+                "chrononode_verify_archive_range".to_string(),
+            ),
+            (
+                "resurgence".to_string(),
+                "resurgence_check_token_age".to_string(),
+            ),
+            (
+                "resurgence".to_string(),
+                "resurgence_check_token_activity_window".to_string(),
+            ),
+            (
+                "resurgence".to_string(),
+                "resurgence_check_liquidity_dormancy".to_string(),
+            ),
+            (
+                "resurgence".to_string(),
+                "resurgence_check_governance_dormancy".to_string(),
+            ),
+            (
+                "resurgence".to_string(),
+                "resurgence_calculate_dormancy_score".to_string(),
+            ),
+            (
+                "resurgence".to_string(),
+                "resurgence_normalize_dead_coin_risk".to_string(),
+            ),
+            (
+                "resurgence".to_string(),
+                "resurgence_generate_dormancy_proof".to_string(),
+            ),
+            (
+                "resurgence".to_string(),
+                "resurgence_emit_dormancy_oracle_result".to_string(),
+            ),
         ];
 
         for import in expected_imports {

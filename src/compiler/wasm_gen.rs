@@ -75,6 +75,74 @@ impl ImportSignature {
                 params: vec![ValType::I64, ValType::I64],
                 results: vec![],
             }),
+            ("crypto", "crypto_verify_signature") => Some(Self {
+                params: vec![ValType::I64, ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("crypto", "crypto_decode_proof") => Some(Self {
+                params: vec![ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("chrononode", "chrononode_fetch_block") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("chrononode", "chrononode_fetch_checkpoint") => Some(Self {
+                params: vec![ValType::I64, ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("chrononode", "chrononode_verify_proof") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("chrononode", "chrononode_extract_event") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("chrononode", "chrononode_extract_tx_by_sender") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("chrononode", "chrononode_extract_tx_by_recipient") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("chrononode", "chrononode_verify_archive_range") => Some(Self {
+                params: vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("resurgence", "resurgence_check_token_age") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("resurgence", "resurgence_check_token_activity_window") => Some(Self {
+                params: vec![ValType::I64, ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("resurgence", "resurgence_check_liquidity_dormancy") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("resurgence", "resurgence_check_governance_dormancy") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("resurgence", "resurgence_calculate_dormancy_score") => Some(Self {
+                params: vec![ValType::I64, ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("resurgence", "resurgence_normalize_dead_coin_risk") => Some(Self {
+                params: vec![ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("resurgence", "resurgence_generate_dormancy_proof") => Some(Self {
+                params: vec![ValType::I64, ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("resurgence", "resurgence_emit_dormancy_oracle_result") => Some(Self {
+                params: vec![ValType::I64, ValType::I64, ValType::I64, ValType::I64],
+                results: vec![],
+            }),
             _ => None,
         }
     }
@@ -743,6 +811,121 @@ mod tests {
                     import_name: "baals_revert".to_string(),
                     args: vec![ASTNode::I64Const(10)],
                 },
+                ASTNode::Call {
+                    import_module: "crypto".to_string(),
+                    import_name: "crypto_verify_signature".to_string(),
+                    args: vec![
+                        ASTNode::I64Const(11),
+                        ASTNode::I64Const(12),
+                        ASTNode::I64Const(13),
+                    ],
+                },
+                ASTNode::Call {
+                    import_module: "crypto".to_string(),
+                    import_name: "crypto_decode_proof".to_string(),
+                    args: vec![ASTNode::I64Const(14)],
+                },
+                ASTNode::Call {
+                    import_module: "chrononode".to_string(),
+                    import_name: "chrononode_fetch_block".to_string(),
+                    args: vec![ASTNode::I64Const(15), ASTNode::I64Const(16)],
+                },
+                ASTNode::Call {
+                    import_module: "chrononode".to_string(),
+                    import_name: "chrononode_fetch_checkpoint".to_string(),
+                    args: vec![
+                        ASTNode::I64Const(17),
+                        ASTNode::I64Const(18),
+                        ASTNode::I64Const(19),
+                    ],
+                },
+                ASTNode::Call {
+                    import_module: "chrononode".to_string(),
+                    import_name: "chrononode_verify_proof".to_string(),
+                    args: vec![ASTNode::I64Const(20), ASTNode::I64Const(21)],
+                },
+                ASTNode::Call {
+                    import_module: "chrononode".to_string(),
+                    import_name: "chrononode_extract_event".to_string(),
+                    args: vec![ASTNode::I64Const(22), ASTNode::I64Const(23)],
+                },
+                ASTNode::Call {
+                    import_module: "chrononode".to_string(),
+                    import_name: "chrononode_extract_tx_by_sender".to_string(),
+                    args: vec![ASTNode::I64Const(24), ASTNode::I64Const(25)],
+                },
+                ASTNode::Call {
+                    import_module: "chrononode".to_string(),
+                    import_name: "chrononode_extract_tx_by_recipient".to_string(),
+                    args: vec![ASTNode::I64Const(26), ASTNode::I64Const(27)],
+                },
+                ASTNode::Call {
+                    import_module: "chrononode".to_string(),
+                    import_name: "chrononode_verify_archive_range".to_string(),
+                    args: vec![
+                        ASTNode::I64Const(28),
+                        ASTNode::I64Const(29),
+                        ASTNode::I64Const(30),
+                        ASTNode::I64Const(31),
+                    ],
+                },
+                ASTNode::Call {
+                    import_module: "resurgence".to_string(),
+                    import_name: "resurgence_check_token_age".to_string(),
+                    args: vec![ASTNode::I64Const(32), ASTNode::I64Const(33)],
+                },
+                ASTNode::Call {
+                    import_module: "resurgence".to_string(),
+                    import_name: "resurgence_check_token_activity_window".to_string(),
+                    args: vec![
+                        ASTNode::I64Const(34),
+                        ASTNode::I64Const(35),
+                        ASTNode::I64Const(36),
+                    ],
+                },
+                ASTNode::Call {
+                    import_module: "resurgence".to_string(),
+                    import_name: "resurgence_check_liquidity_dormancy".to_string(),
+                    args: vec![ASTNode::I64Const(37), ASTNode::I64Const(38)],
+                },
+                ASTNode::Call {
+                    import_module: "resurgence".to_string(),
+                    import_name: "resurgence_check_governance_dormancy".to_string(),
+                    args: vec![ASTNode::I64Const(39), ASTNode::I64Const(40)],
+                },
+                ASTNode::Call {
+                    import_module: "resurgence".to_string(),
+                    import_name: "resurgence_calculate_dormancy_score".to_string(),
+                    args: vec![
+                        ASTNode::I64Const(41),
+                        ASTNode::I64Const(42),
+                        ASTNode::I64Const(43),
+                    ],
+                },
+                ASTNode::Call {
+                    import_module: "resurgence".to_string(),
+                    import_name: "resurgence_normalize_dead_coin_risk".to_string(),
+                    args: vec![ASTNode::I64Const(44)],
+                },
+                ASTNode::Call {
+                    import_module: "resurgence".to_string(),
+                    import_name: "resurgence_generate_dormancy_proof".to_string(),
+                    args: vec![
+                        ASTNode::I64Const(45),
+                        ASTNode::I64Const(46),
+                        ASTNode::I64Const(47),
+                    ],
+                },
+                ASTNode::Call {
+                    import_module: "resurgence".to_string(),
+                    import_name: "resurgence_emit_dormancy_oracle_result".to_string(),
+                    args: vec![
+                        ASTNode::I64Const(48),
+                        ASTNode::I64Const(49),
+                        ASTNode::I64Const(50),
+                        ASTNode::I64Const(51),
+                    ],
+                },
             ],
             imports: vec![
                 ("baals".to_string(), "baals_get_sender".to_string()),
@@ -755,6 +938,68 @@ mod tests {
                 ("baals".to_string(), "baals_read_call_result".to_string()),
                 ("baals".to_string(), "baals_transfer_value".to_string()),
                 ("baals".to_string(), "baals_revert".to_string()),
+                ("crypto".to_string(), "crypto_verify_signature".to_string()),
+                ("crypto".to_string(), "crypto_decode_proof".to_string()),
+                (
+                    "chrononode".to_string(),
+                    "chrononode_fetch_block".to_string(),
+                ),
+                (
+                    "chrononode".to_string(),
+                    "chrononode_fetch_checkpoint".to_string(),
+                ),
+                (
+                    "chrononode".to_string(),
+                    "chrononode_verify_proof".to_string(),
+                ),
+                (
+                    "chrononode".to_string(),
+                    "chrononode_extract_event".to_string(),
+                ),
+                (
+                    "chrononode".to_string(),
+                    "chrononode_extract_tx_by_sender".to_string(),
+                ),
+                (
+                    "chrononode".to_string(),
+                    "chrononode_extract_tx_by_recipient".to_string(),
+                ),
+                (
+                    "chrononode".to_string(),
+                    "chrononode_verify_archive_range".to_string(),
+                ),
+                (
+                    "resurgence".to_string(),
+                    "resurgence_check_token_age".to_string(),
+                ),
+                (
+                    "resurgence".to_string(),
+                    "resurgence_check_token_activity_window".to_string(),
+                ),
+                (
+                    "resurgence".to_string(),
+                    "resurgence_check_liquidity_dormancy".to_string(),
+                ),
+                (
+                    "resurgence".to_string(),
+                    "resurgence_check_governance_dormancy".to_string(),
+                ),
+                (
+                    "resurgence".to_string(),
+                    "resurgence_calculate_dormancy_score".to_string(),
+                ),
+                (
+                    "resurgence".to_string(),
+                    "resurgence_normalize_dead_coin_risk".to_string(),
+                ),
+                (
+                    "resurgence".to_string(),
+                    "resurgence_generate_dormancy_proof".to_string(),
+                ),
+                (
+                    "resurgence".to_string(),
+                    "resurgence_emit_dormancy_oracle_result".to_string(),
+                ),
             ],
         };
 
