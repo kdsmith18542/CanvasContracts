@@ -32,15 +32,14 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ matrix.rust }}
         target: ${{ matrix.target }}
-        override: true
-        profile: minimal
+        components: clippy, rustfmt
 
     - name: Cache Rust dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
@@ -51,16 +50,10 @@ jobs:
           ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ matrix.target }}-
 
     - name: Install wasm-pack
-      uses: actions-rs/install@v0.1
-      with:
-        crate: wasm-pack
-        use-tool-cache: true
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
     - name: Install wasmtime
-      uses: actions-rs/install@v0.1
-      with:
-        crate: wasmtime-cli
-        use-tool-cache: true
+      run: curl https://wasmtime.dev/install.sh -sSf | sh
 
     - name: Check Rust code formatting
       run: cargo fmt --all -- --check
@@ -82,7 +75,7 @@ jobs:
         fi
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: matrix.rust == 'stable' && matrix.target == 'x86_64-unknown-linux-gnu'
       with:
         name: rust-build-${{ matrix.target }}
@@ -149,7 +142,7 @@ jobs:
         fi
 
     - name: Upload frontend artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: frontend-build-${{ matrix.node-version }}
         path: |
@@ -201,10 +194,10 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Setup Rust
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
-        override: true
+        components: clippy, rustfmt
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -213,7 +206,7 @@ jobs:
         cache: 'npm'
 
     - name: Download artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         path: artifacts/
 
@@ -240,10 +233,10 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Setup Rust
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
-        override: true
+        components: rust-docs
 
     - name: Build Rust documentation
       run: |
@@ -252,7 +245,7 @@ jobs:
         fi
 
     - name: Upload documentation
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: documentation
         path: |
@@ -271,7 +264,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Download all artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         path: release-artifacts/
 
@@ -282,7 +275,7 @@ jobs:
         tar -czf canvas-contracts-release.tar.gz release/
 
     - name: Upload release package
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: canvas-contracts-release
         path: canvas-contracts-release.tar.gz 

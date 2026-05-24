@@ -2,7 +2,7 @@ use crate::{
     compiler::GraphExecutor,
     error::{CanvasError, CanvasResult},
     nodes::NodeRegistry,
-    types::{ExecutionTrace, ExecutionStep, NodeId, VisualGraph},
+    types::{ExecutionStep, ExecutionTrace, NodeId, VisualGraph},
 };
 
 use serde::{Deserialize, Serialize};
@@ -76,18 +76,33 @@ impl DebugSession {
         }
     }
 
-    pub fn add_breakpoint(&mut self, node_id: NodeId, condition: Option<String>) -> CanvasResult<()> {
+    pub fn add_breakpoint(
+        &mut self,
+        node_id: NodeId,
+        condition: Option<String>,
+    ) -> CanvasResult<()> {
         if !self.graph.nodes.iter().any(|n| n.id == node_id) {
             return Err(CanvasError::NodeNotFound(node_id.to_string()));
         }
-        self.breakpoints.push(Breakpoint { node_id, condition, enabled: true, hit_count: 0 });
+        self.breakpoints.push(Breakpoint {
+            node_id,
+            condition,
+            enabled: true,
+            hit_count: 0,
+        });
         Ok(())
     }
 
     pub fn remove_breakpoint(&mut self, node_id: &NodeId) -> CanvasResult<()> {
-        let idx = self.breakpoints.iter().position(|bp| &bp.node_id == node_id);
+        let idx = self
+            .breakpoints
+            .iter()
+            .position(|bp| &bp.node_id == node_id);
         match idx {
-            Some(i) => { self.breakpoints.remove(i); Ok(()) }
+            Some(i) => {
+                self.breakpoints.remove(i);
+                Ok(())
+            }
             None => Err(CanvasError::BreakpointNotFound(node_id.to_string())),
         }
     }
@@ -147,26 +162,41 @@ impl DebugSession {
             }
         }
 
-        if self.is_paused { Ok(DebugState::Paused) }
-        else { Ok(DebugState::Finished) }
+        if self.is_paused {
+            Ok(DebugState::Paused)
+        } else {
+            Ok(DebugState::Finished)
+        }
     }
 
     pub fn get_state(&self) -> DebugState {
-        if self.is_paused { DebugState::Paused }
-        else if self.trace.steps.is_empty() || self.current_step >= self.trace.steps.len() {
+        if self.is_paused {
+            DebugState::Paused
+        } else if self.trace.steps.is_empty() || self.current_step >= self.trace.steps.len() {
             DebugState::Finished
+        } else {
+            DebugState::Running
         }
-        else { DebugState::Running }
     }
 
-    pub fn get_trace(&self) -> &[ExecutionStep] { &self.trace.steps }
-    pub fn get_breakpoints(&self) -> &[Breakpoint] { &self.breakpoints }
-    pub fn get_variables(&self) -> &HashMap<String, serde_json::Value> { &self.variables }
+    pub fn get_trace(&self) -> &[ExecutionStep] {
+        &self.trace.steps
+    }
+    pub fn get_breakpoints(&self) -> &[Breakpoint] {
+        &self.breakpoints
+    }
+    pub fn get_variables(&self) -> &HashMap<String, serde_json::Value> {
+        &self.variables
+    }
 
     fn should_pause_at_current(&self) -> bool {
-        if self.current_step >= self.trace.steps.len() { return false; }
+        if self.current_step >= self.trace.steps.len() {
+            return false;
+        }
         let step = &self.trace.steps[self.current_step];
-        self.breakpoints.iter().any(|bp| bp.node_id == step.node_id && bp.enabled)
+        self.breakpoints
+            .iter()
+            .any(|bp| bp.node_id == step.node_id && bp.enabled)
     }
 }
 
@@ -190,12 +220,19 @@ impl DebuggerUtils {
         by_gas.sort_by_key(|s| std::cmp::Reverse(s.gas_consumed));
         let most_expensive = by_gas.iter().take(5).map(|s| s.node_id).collect();
 
-        let bottlenecks: Vec<_> = trace.iter()
+        let bottlenecks: Vec<_> = trace
+            .iter()
             .filter(|s| s.duration_ms > 100 && s.gas_consumed > 1000)
             .map(|s| s.node_id)
             .collect();
 
-        PerformanceAnalysis { total_gas, total_time, slowest_nodes: slowest, most_expensive_nodes: most_expensive, bottlenecks }
+        PerformanceAnalysis {
+            total_gas,
+            total_time,
+            slowest_nodes: slowest,
+            most_expensive_nodes: most_expensive,
+            bottlenecks,
+        }
     }
 }
 
@@ -215,7 +252,9 @@ mod tests {
 
     fn test_registry() -> NodeRegistry {
         let mut r = NodeRegistry::new();
-        for d in builtin_node_definitions() { r.register_node(d); }
+        for d in builtin_node_definitions() {
+            r.register_node(d);
+        }
         r
     }
 

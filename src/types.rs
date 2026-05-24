@@ -28,8 +28,25 @@ pub type BlockNumber = u64;
 /// Timestamp
 pub type Timestamp = u64;
 
-/// Node type enum
+/// Simple Node type for compatibility with gated modules
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Node {
+    pub id: NodeId,
+    pub node_type: NodeType,
+    pub position: Position,
+    pub properties: HashMap<String, serde_json::Value>,
+}
+
+/// Simple Edge type for compatibility with gated modules
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Edge {
+    pub id: EdgeId,
+    pub source: NodeId,
+    pub target: NodeId,
+}
+
+/// Node type enum
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NodeType {
     Logic,
     State,
@@ -39,6 +56,9 @@ pub enum NodeType {
     Control,
     Time,
     Custom,
+    Start,
+    End,
+    Resurgence,
 }
 
 /// Graph structure
@@ -102,9 +122,9 @@ impl ValueType {
             }
             (ValueType::Object(fields1), ValueType::Object(fields2)) => {
                 fields1.len() == fields2.len()
-                    && fields1.iter().all(|(k, v)| {
-                        fields2.get(k).is_some_and(|v2| v.is_compatible_with(v2))
-                    })
+                    && fields1
+                        .iter()
+                        .all(|(k, v)| fields2.get(k).is_some_and(|v2| v.is_compatible_with(v2)))
             }
             _ => false,
         }
@@ -290,6 +310,50 @@ impl VisualGraph {
     pub fn get_node_mut(&mut self, id: NodeId) -> Option<&mut VisualNode> {
         self.nodes.iter_mut().find(|node| node.id == id)
     }
+
+    /// Get all nodes (for compatibility with gated modules)
+    pub fn get_nodes(&self) -> &[VisualNode] {
+        &self.nodes
+    }
+
+    /// Get all connections (for compatibility with gated modules)
+    pub fn get_connections(&self) -> &[Connection] {
+        &self.connections
+    }
+
+    /// Convert to Node/Edge format for gated modules
+    pub fn to_nodes_edges(&self) -> (Vec<Node>, Vec<Edge>) {
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|v| Node {
+                id: v.id,
+                node_type: NodeType::Logic, // Default, modules should check string type
+                position: v.position.clone(),
+                properties: v.properties.clone(),
+            })
+            .collect();
+        let edges = self
+            .connections
+            .iter()
+            .map(|c| Edge {
+                id: c.id,
+                source: c.source_node,
+                target: c.target_node,
+            })
+            .collect();
+        (nodes, edges)
+    }
+
+    /// Get nodes as simplified Node types (for gated module compatibility)
+    pub fn to_nodes(&self) -> Vec<Node> {
+        self.to_nodes_edges().0
+    }
+
+    /// Get edges as simplified Edge types (for gated module compatibility)
+    pub fn to_edges(&self) -> Vec<Edge> {
+        self.to_nodes_edges().1
+    }
 }
 
 /// Contract compilation result
@@ -441,7 +505,7 @@ mod tests {
         let mut graph = VisualGraph::new("test graph");
         let node = VisualNode::new(Uuid::new_v4(), "test", Position::new(0.0, 0.0));
         let node_id = node.id;
-        
+
         graph.add_node(node);
         assert!(graph.get_node(node_id).is_some());
     }

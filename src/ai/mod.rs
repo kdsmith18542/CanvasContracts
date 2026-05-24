@@ -3,15 +3,15 @@
 use crate::{
     config::Config,
     error::{CanvasError, CanvasResult},
-    types::{Graph, NodeId, NodeType},
+    types::{NodeId, NodeType, VisualGraph},
 };
 
-mod pattern_recognition;
 mod optimization;
+mod pattern_recognition;
 mod validator;
 
-use pattern_recognition::PatternRecognitionEngine;
 use optimization::OptimizationEngine;
+use pattern_recognition::PatternRecognitionEngine;
 use validator::RuleBasedValidator;
 
 /// AI Assistant for analyzing and optimizing contracts
@@ -108,7 +108,7 @@ pub struct OptimizationResult {
     pub optimized_gas_estimate: u64,
     pub gas_savings: u64,
     pub suggestions: Vec<OptimizationSuggestion>,
-    pub modified_graph: Option<Graph>,
+    pub modified_graph: Option<VisualGraph>,
 }
 
 /// Node context for suggestions
@@ -142,14 +142,14 @@ impl AiAssistant {
     }
 
     /// Analyze contract patterns
-    pub fn analyze_patterns(&self, graph: &Graph) -> CanvasResult<PatternAnalysis> {
+    pub fn analyze_patterns(&self, graph: &VisualGraph) -> CanvasResult<PatternAnalysis> {
         log::info!("Analyzing contract patterns");
-        
+
         let patterns_found = self.pattern_engine.recognize_patterns(graph)?;
         let anti_patterns = self.pattern_engine.detect_anti_patterns(graph)?;
         let security_issues = self.pattern_engine.detect_security_issues(graph)?;
         let suggestions = self.generate_suggestions(graph, &patterns_found, &anti_patterns)?;
-        
+
         Ok(PatternAnalysis {
             patterns_found,
             anti_patterns,
@@ -159,38 +159,42 @@ impl AiAssistant {
     }
 
     /// Validate contract structure
-    pub fn validate_contract(&self, graph: &Graph) -> CanvasResult<ValidationResult> {
+    pub fn validate_contract(&self, graph: &VisualGraph) -> CanvasResult<ValidationResult> {
         log::info!("Validating contract structure");
-        
+
         self.validator.validate(graph)
     }
 
     /// Optimize contract for gas efficiency
-    pub fn optimize_contract(&self, graph: &Graph) -> CanvasResult<OptimizationResult> {
+    pub fn optimize_contract(&self, graph: &VisualGraph) -> CanvasResult<OptimizationResult> {
         log::info!("Optimizing contract for gas efficiency");
-        
+
         self.optimizer.optimize(graph)
     }
 
     /// Suggest next nodes based on context
-    pub fn suggest_next_nodes(&self, graph: &Graph, current_node: NodeId) -> CanvasResult<Vec<NodeSuggestion>> {
+    pub fn suggest_next_nodes(
+        &self,
+        graph: &VisualGraph,
+        current_node: NodeId,
+    ) -> CanvasResult<Vec<NodeSuggestion>> {
         log::info!("Suggesting next nodes for node {}", current_node);
-        
+
         let context = self.analyze_context(graph, current_node)?;
         let suggestions = self.generate_node_suggestions(&context)?;
-        
+
         Ok(suggestions)
     }
 
     /// Generate suggestions based on analysis
     fn generate_suggestions(
         &self,
-        graph: &Graph,
+        graph: &VisualGraph,
         patterns: &[ContractPattern],
         anti_patterns: &[AntiPattern],
     ) -> CanvasResult<Vec<String>> {
         let mut suggestions = Vec::new();
-        
+
         // Pattern-based suggestions
         for pattern in patterns {
             match pattern.category {
@@ -209,20 +213,20 @@ impl AiAssistant {
                 _ => {}
             }
         }
-        
+
         // Anti-pattern based suggestions
         for anti_pattern in anti_patterns {
             suggestions.push(anti_pattern.suggestion.clone());
         }
-        
+
         Ok(suggestions)
     }
 
     /// Analyze context around a node
-    fn analyze_context(&self, graph: &Graph, node_id: NodeId) -> CanvasResult<NodeContext> {
+    fn analyze_context(&self, graph: &VisualGraph, node_id: NodeId) -> CanvasResult<NodeContext> {
         // TODO: Implement context analysis
         // For now, return a basic context
-        
+
         Ok(NodeContext {
             node_type: NodeType::Logic,
             connected_nodes: vec![],
@@ -233,9 +237,12 @@ impl AiAssistant {
     }
 
     /// Generate node suggestions based on context
-    fn generate_node_suggestions(&self, context: &NodeContext) -> CanvasResult<Vec<NodeSuggestion>> {
+    fn generate_node_suggestions(
+        &self,
+        context: &NodeContext,
+    ) -> CanvasResult<Vec<NodeSuggestion>> {
         let mut suggestions = Vec::new();
-        
+
         match context.node_type {
             NodeType::Logic => {
                 suggestions.push(NodeSuggestion {
@@ -261,7 +268,7 @@ impl AiAssistant {
             }
             _ => {}
         }
-        
+
         Ok(suggestions)
     }
 }
@@ -282,7 +289,7 @@ mod tests {
     fn test_pattern_analysis() {
         let config = Config::default();
         let ai = AiAssistant::new(&config).unwrap();
-        let graph = Graph::new();
+        let graph = VisualGraph::new("test");
         let result = ai.analyze_patterns(&graph);
         assert!(result.is_ok());
     }
@@ -291,7 +298,7 @@ mod tests {
     fn test_contract_validation() {
         let config = Config::default();
         let ai = AiAssistant::new(&config).unwrap();
-        let graph = Graph::new();
+        let graph = VisualGraph::new("test");
         let result = ai.validate_contract(&graph);
         assert!(result.is_ok());
     }
@@ -300,8 +307,8 @@ mod tests {
     fn test_contract_optimization() {
         let config = Config::default();
         let ai = AiAssistant::new(&config).unwrap();
-        let graph = Graph::new();
+        let graph = VisualGraph::new("test");
         let result = ai.optimize_contract(&graph);
         assert!(result.is_ok());
     }
-} 
+}

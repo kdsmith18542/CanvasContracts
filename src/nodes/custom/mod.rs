@@ -2,7 +2,7 @@
 
 use crate::{
     error::{CanvasError, CanvasResult},
-    types::{Node, NodeId, NodeType},
+    types::NodeId,
     wasm::WasmModule,
 };
 
@@ -88,13 +88,13 @@ impl CustomNodeRegistry {
     pub fn register_node(&mut self, definition: CustomNodeDefinition) -> CanvasResult<()> {
         // Validate the node definition
         self.validate_node_definition(&definition)?;
-        
+
         // Load WASM module if specified
         if let Some(wasm_info) = &definition.wasm_module {
             let wasm_module = self.load_wasm_module(wasm_info)?;
             self.wasm_modules.insert(definition.id.clone(), wasm_module);
         }
-        
+
         self.nodes.insert(definition.id.clone(), definition);
         Ok(())
     }
@@ -126,16 +126,19 @@ impl CustomNodeRegistry {
         inputs: HashMap<String, serde_json::Value>,
         properties: HashMap<String, serde_json::Value>,
     ) -> CanvasResult<HashMap<String, serde_json::Value>> {
-        let definition = self.nodes.get(node_id)
+        let definition = self
+            .nodes
+            .get(node_id)
             .ok_or_else(|| CanvasError::NodeNotFound(node_id.to_string()))?;
 
         match &definition.implementation {
             CustomNodeImplementation::Composite { sub_graph } => {
                 self.execute_composite_node(definition, inputs, properties, sub_graph)
             }
-            CustomNodeImplementation::Wasm { function_name, module_info } => {
-                self.execute_wasm_node(definition, inputs, properties, function_name, module_info)
-            }
+            CustomNodeImplementation::Wasm {
+                function_name,
+                module_info,
+            } => self.execute_wasm_node(definition, inputs, properties, function_name, module_info),
             CustomNodeImplementation::Script { language, code } => {
                 self.execute_script_node(definition, inputs, properties, language, code)
             }
@@ -146,16 +149,17 @@ impl CustomNodeRegistry {
     fn validate_node_definition(&self, definition: &CustomNodeDefinition) -> CanvasResult<()> {
         // Check for duplicate IDs
         if self.nodes.contains_key(&definition.id) {
-            return Err(CanvasError::ValidationError(
-                format!("Node with ID '{}' already exists", definition.id)
-            ));
+            return Err(CanvasError::Validation(format!(
+                "Node with ID '{}' already exists",
+                definition.id
+            )));
         }
 
         // Validate inputs
         for input in &definition.inputs {
             if input.name.is_empty() {
-                return Err(CanvasError::ValidationError(
-                    "Input name cannot be empty".to_string()
+                return Err(CanvasError::Validation(
+                    "Input name cannot be empty".to_string(),
                 ));
             }
         }
@@ -163,8 +167,8 @@ impl CustomNodeRegistry {
         // Validate outputs
         for output in &definition.outputs {
             if output.name.is_empty() {
-                return Err(CanvasError::ValidationError(
-                    "Output name cannot be empty".to_string()
+                return Err(CanvasError::Validation(
+                    "Output name cannot be empty".to_string(),
                 ));
             }
         }
@@ -172,8 +176,8 @@ impl CustomNodeRegistry {
         // Validate properties
         for property in &definition.properties {
             if property.name.is_empty() {
-                return Err(CanvasError::ValidationError(
-                    "Property name cannot be empty".to_string()
+                return Err(CanvasError::Validation(
+                    "Property name cannot be empty".to_string(),
                 ));
             }
         }
@@ -202,15 +206,15 @@ impl CustomNodeRegistry {
         // 2. Setting up input values
         // 3. Executing the sub-graph
         // 4. Collecting output values
-        
+
         log::info!("Executing composite node: {}", definition.name);
-        
+
         // Placeholder implementation
         let mut outputs = HashMap::new();
         for output in &definition.outputs {
             outputs.insert(output.name.clone(), serde_json::Value::Null);
         }
-        
+
         Ok(outputs)
     }
 
@@ -223,23 +227,29 @@ impl CustomNodeRegistry {
         function_name: &str,
         module_info: &WasmModuleInfo,
     ) -> CanvasResult<HashMap<String, serde_json::Value>> {
-        let wasm_module = self.wasm_modules.get(&definition.id)
-            .ok_or_else(|| CanvasError::WasmError("WASM module not loaded".to_string()))?;
+        let wasm_module = self
+            .wasm_modules
+            .get(&definition.id)
+            .ok_or_else(|| CanvasError::Wasm("WASM module not loaded".to_string()))?;
 
         // TODO: Implement WASM function execution
         // This would involve:
         // 1. Converting inputs to WASM-compatible format
         // 2. Calling the WASM function
         // 3. Converting outputs back to JSON format
-        
-        log::info!("Executing WASM node: {} with function: {}", definition.name, function_name);
-        
+
+        log::info!(
+            "Executing WASM node: {} with function: {}",
+            definition.name,
+            function_name
+        );
+
         // Placeholder implementation
         let mut outputs = HashMap::new();
         for output in &definition.outputs {
             outputs.insert(output.name.clone(), serde_json::Value::Null);
         }
-        
+
         Ok(outputs)
     }
 
@@ -258,15 +268,19 @@ impl CustomNodeRegistry {
         // 2. Setting up the execution environment
         // 3. Running the script with inputs
         // 4. Collecting outputs
-        
-        log::info!("Executing script node: {} with language: {}", definition.name, language);
-        
+
+        log::info!(
+            "Executing script node: {} with language: {}",
+            definition.name,
+            language
+        );
+
         // Placeholder implementation
         let mut outputs = HashMap::new();
         for output in &definition.outputs {
             outputs.insert(output.name.clone(), serde_json::Value::Null);
         }
-        
+
         Ok(outputs)
     }
 }
@@ -309,7 +323,13 @@ impl CustomNodeBuilder {
     }
 
     /// Add an input port
-    pub fn input(mut self, name: String, port_type: String, required: bool, description: String) -> Self {
+    pub fn input(
+        mut self,
+        name: String,
+        port_type: String,
+        required: bool,
+        description: String,
+    ) -> Self {
         self.definition.inputs.push(CustomNodePort {
             name,
             port_type,
@@ -384,17 +404,23 @@ mod tests {
     #[test]
     fn test_custom_node_registry() {
         let mut registry = CustomNodeRegistry::new();
-        
-        let definition = CustomNodeBuilder::new(
-            "test-node".to_string(),
-            "Test Node".to_string(),
-        )
-        .description("A test custom node".to_string())
-        .category("Test".to_string())
-        .input("input1".to_string(), "number".to_string(), true, "First input".to_string())
-        .output("output1".to_string(), "number".to_string(), "First output".to_string())
-        .composite("{}".to_string())
-        .build();
+
+        let definition = CustomNodeBuilder::new("test-node".to_string(), "Test Node".to_string())
+            .description("A test custom node".to_string())
+            .category("Test".to_string())
+            .input(
+                "input1".to_string(),
+                "number".to_string(),
+                true,
+                "First input".to_string(),
+            )
+            .output(
+                "output1".to_string(),
+                "number".to_string(),
+                "First output".to_string(),
+            )
+            .composite("{}".to_string())
+            .build();
 
         assert!(registry.register_node(definition).is_ok());
         assert!(registry.get_node("test-node").is_some());
@@ -403,22 +429,17 @@ mod tests {
     #[test]
     fn test_duplicate_node_registration() {
         let mut registry = CustomNodeRegistry::new();
-        
-        let definition1 = CustomNodeBuilder::new(
-            "test-node".to_string(),
-            "Test Node".to_string(),
-        )
-        .composite("{}".to_string())
-        .build();
 
-        let definition2 = CustomNodeBuilder::new(
-            "test-node".to_string(),
-            "Another Test Node".to_string(),
-        )
-        .composite("{}".to_string())
-        .build();
+        let definition1 = CustomNodeBuilder::new("test-node".to_string(), "Test Node".to_string())
+            .composite("{}".to_string())
+            .build();
+
+        let definition2 =
+            CustomNodeBuilder::new("test-node".to_string(), "Another Test Node".to_string())
+                .composite("{}".to_string())
+                .build();
 
         assert!(registry.register_node(definition1).is_ok());
         assert!(registry.register_node(definition2).is_err());
     }
-} 
+}

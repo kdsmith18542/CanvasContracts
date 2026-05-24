@@ -1,6 +1,6 @@
 use crate::{
     error::CanvasResult,
-    types::{Graph, NodeId, NodeType},
+    types::{NodeId, NodeType, VisualGraph},
 };
 
 use super::ValidationResult;
@@ -18,7 +18,7 @@ struct ValidationRule {
     description: String,
     rule_type: RuleType,
     severity: RuleSeverity,
-    check: fn(&Graph) -> ValidationCheckResult,
+    check: fn(&VisualGraph) -> ValidationCheckResult,
 }
 
 /// Security rule
@@ -28,7 +28,7 @@ struct SecurityRule {
     description: String,
     cve_reference: Option<String>,
     severity: RuleSeverity,
-    check: fn(&Graph) -> SecurityCheckResult,
+    check: fn(&VisualGraph) -> SecurityCheckResult,
 }
 
 /// Rule type
@@ -79,7 +79,7 @@ impl RuleBasedValidator {
     }
 
     /// Validate contract structure
-    pub fn validate(&self, graph: &Graph) -> CanvasResult<ValidationResult> {
+    pub fn validate(&self, graph: &VisualGraph) -> CanvasResult<ValidationResult> {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
         let mut info = Vec::new();
@@ -145,7 +145,8 @@ impl RuleBasedValidator {
                     if Self::has_cycles(graph) {
                         ValidationCheckResult {
                             passed: false,
-                            message: "Contract contains cycles which may cause infinite loops".to_string(),
+                            message: "Contract contains cycles which may cause infinite loops"
+                                .to_string(),
                             affected_nodes: vec![],
                         }
                     } else {
@@ -210,9 +211,15 @@ impl RuleBasedValidator {
                 rule_type: RuleType::Structure,
                 severity: RuleSeverity::Error,
                 check: |graph| {
-                    let nodes = graph.get_nodes();
-                    let start_nodes: Vec<_> = nodes.iter().filter(|n| n.node_type == NodeType::Start).collect();
-                    let end_nodes: Vec<_> = nodes.iter().filter(|n| n.node_type == NodeType::End).collect();
+                    let nodes = graph.to_nodes();
+                    let start_nodes: Vec<_> = nodes
+                        .iter()
+                        .filter(|n| n.node_type == NodeType::Start)
+                        .collect();
+                    let end_nodes: Vec<_> = nodes
+                        .iter()
+                        .filter(|n| n.node_type == NodeType::End)
+                        .collect();
 
                     if start_nodes.len() == 1 && end_nodes.len() == 1 {
                         ValidationCheckResult {
@@ -223,8 +230,11 @@ impl RuleBasedValidator {
                     } else {
                         ValidationCheckResult {
                             passed: false,
-                            message: format!("Expected 1 start and 1 end node, found {} start and {} end", 
-                                           start_nodes.len(), end_nodes.len()),
+                            message: format!(
+                                "Expected 1 start and 1 end node, found {} start and {} end",
+                                start_nodes.len(),
+                                end_nodes.len()
+                            ),
                             affected_nodes: vec![],
                         }
                     }
@@ -237,17 +247,23 @@ impl RuleBasedValidator {
                 rule_type: RuleType::Performance,
                 severity: RuleSeverity::Warning,
                 check: |graph| {
-                    let node_count = graph.get_nodes().len();
+                    let node_count = graph.to_nodes().len();
                     if node_count <= 50 {
                         ValidationCheckResult {
                             passed: true,
-                            message: format!("Contract has {} nodes (within reasonable limits)", node_count),
+                            message: format!(
+                                "Contract has {} nodes (within reasonable limits)",
+                                node_count
+                            ),
                             affected_nodes: vec![],
                         }
                     } else {
                         ValidationCheckResult {
                             passed: false,
-                            message: format!("Contract has {} nodes (consider breaking into smaller contracts)", node_count),
+                            message: format!(
+                                "Contract has {} nodes (consider breaking into smaller contracts)",
+                                node_count
+                            ),
                             affected_nodes: vec![],
                         }
                     }
@@ -290,7 +306,7 @@ impl RuleBasedValidator {
                 name: "Access Control".to_string(),
                 description: "State modifications should have proper access controls".to_string(),
                 cve_reference: None,
-                severity: RuleSeverity::High,
+                severity: RuleSeverity::Error,
                 check: |graph| {
                     if Self::has_access_control_issues(graph) {
                         SecurityCheckResult {
@@ -298,7 +314,8 @@ impl RuleBasedValidator {
                             message: "Missing access controls on state modifications".to_string(),
                             affected_nodes: vec![],
                             cve_reference: None,
-                            mitigation: "Add access control checks before state modifications".to_string(),
+                            mitigation: "Add access control checks before state modifications"
+                                .to_string(),
                         }
                     } else {
                         SecurityCheckResult {
@@ -316,7 +333,7 @@ impl RuleBasedValidator {
                 name: "Arithmetic Safety".to_string(),
                 description: "Arithmetic operations should have overflow checks".to_string(),
                 cve_reference: Some("CVE-2018-10299".to_string()),
-                severity: RuleSeverity::High,
+                severity: RuleSeverity::Error,
                 check: |graph| {
                     if Self::has_unchecked_arithmetic(graph) {
                         SecurityCheckResult {
@@ -341,10 +358,10 @@ impl RuleBasedValidator {
     }
 
     /// Check for cycles in the graph
-    fn has_cycles(graph: &Graph) -> bool {
+    fn has_cycles(graph: &VisualGraph) -> bool {
         // Simple cycle detection using DFS
-        let nodes = graph.get_nodes();
-        let edges = graph.get_edges();
+        let nodes = graph.to_nodes();
+        let edges = graph.to_edges();
         let mut visited = std::collections::HashSet::new();
         let mut rec_stack = std::collections::HashSet::new();
 
@@ -378,9 +395,9 @@ impl RuleBasedValidator {
             false
         }
 
-        for node in nodes {
+        for node in &nodes {
             if !visited.contains(&node.id) {
-                if dfs(&node.id, nodes, edges, &mut visited, &mut rec_stack) {
+                if dfs(&node.id, &nodes, &edges, &mut visited, &mut rec_stack) {
                     return true;
                 }
             }
@@ -390,13 +407,16 @@ impl RuleBasedValidator {
     }
 
     /// Find unreachable nodes
-    fn find_unreachable_nodes(graph: &Graph) -> Vec<NodeId> {
-        let nodes = graph.get_nodes();
-        let edges = graph.get_edges();
+    fn find_unreachable_nodes(graph: &VisualGraph) -> Vec<NodeId> {
+        let nodes = graph.to_nodes();
+        let edges = graph.to_edges();
         let mut reachable = std::collections::HashSet::new();
 
         // Find start nodes
-        let start_nodes: Vec<_> = nodes.iter().filter(|n| n.node_type == NodeType::Start).collect();
+        let start_nodes: Vec<_> = nodes
+            .iter()
+            .filter(|n| n.node_type == NodeType::Start)
+            .collect();
 
         // BFS from start nodes
         let mut queue = std::collections::VecDeque::new();
@@ -406,7 +426,7 @@ impl RuleBasedValidator {
         }
 
         while let Some(current_id) = queue.pop_front() {
-            for edge in edges {
+            for edge in &edges {
                 if edge.source == current_id && !reachable.contains(&edge.target) {
                     reachable.insert(edge.target.clone());
                     queue.push_back(edge.target.clone());
@@ -423,27 +443,27 @@ impl RuleBasedValidator {
     }
 
     /// Find nodes with missing inputs
-    fn find_missing_inputs(graph: &Graph) -> Vec<NodeId> {
-        let nodes = graph.get_nodes();
-        let edges = graph.get_edges();
+    fn find_missing_inputs(graph: &VisualGraph) -> Vec<NodeId> {
+        let nodes = graph.to_nodes();
+        let edges = graph.to_edges();
         let mut missing_inputs = Vec::new();
 
-        for node in nodes {
+        for node in &nodes {
             if node.node_type == NodeType::Start {
                 continue; // Start node doesn't need inputs
             }
 
             // Count incoming edges
             let incoming_count = edges.iter().filter(|e| e.target == node.id).count();
-            
+
             // Check if node has required inputs (simplified logic)
             let required_inputs = match node.node_type {
-                NodeType::Logic => 2, // AND/OR operations need 2 inputs
+                NodeType::Logic => 2,      // AND/OR operations need 2 inputs
                 NodeType::Arithmetic => 2, // Arithmetic operations need 2 inputs
-                NodeType::State => 1, // State operations need at least 1 input
-                NodeType::External => 1, // External calls need at least 1 input
-                NodeType::Control => 1, // Control flow needs 1 input
-                NodeType::End => 1, // End node needs 1 input
+                NodeType::State => 1,      // State operations need at least 1 input
+                NodeType::External => 1,   // External calls need at least 1 input
+                NodeType::Control => 1,    // Control flow needs 1 input
+                NodeType::End => 1,        // End node needs 1 input
                 _ => 0,
             };
 
@@ -456,12 +476,12 @@ impl RuleBasedValidator {
     }
 
     /// Check for reentrancy risk
-    fn has_reentrancy_risk(graph: &Graph) -> bool {
-        let nodes = graph.get_nodes();
-        let edges = graph.get_edges();
+    fn has_reentrancy_risk(graph: &VisualGraph) -> bool {
+        let nodes = graph.to_nodes();
+        let edges = graph.to_edges();
 
         // Look for patterns: External -> State
-        for edge in edges {
+        for edge in &edges {
             if let (Some(source), Some(target)) = (
                 nodes.iter().find(|n| n.id == edge.source),
                 nodes.iter().find(|n| n.id == edge.target),
@@ -476,24 +496,27 @@ impl RuleBasedValidator {
     }
 
     /// Check for access control issues
-    fn has_access_control_issues(graph: &Graph) -> bool {
-        let nodes = graph.get_nodes();
-        
+    fn has_access_control_issues(graph: &VisualGraph) -> bool {
+        let nodes = graph.to_nodes();
+
         // Check if there are state nodes without obvious access control
-        let state_nodes: Vec<_> = nodes.iter().filter(|n| n.node_type == NodeType::State).collect();
-        
+        let state_nodes: Vec<_> = nodes
+            .iter()
+            .filter(|n| n.node_type == NodeType::State)
+            .collect();
+
         // Simple heuristic: if there are many state operations, assume access control might be missing
         state_nodes.len() > 3
     }
 
     /// Check for unchecked arithmetic
-    fn has_unchecked_arithmetic(graph: &Graph) -> bool {
-        let nodes = graph.get_nodes();
-        
+    fn has_unchecked_arithmetic(graph: &VisualGraph) -> bool {
+        let nodes = graph.to_nodes();
+
         // Look for arithmetic nodes followed by state operations
-        let edges = graph.get_edges();
-        
-        for edge in edges {
+        let edges = graph.to_edges();
+
+        for edge in &edges {
             if let (Some(source), Some(target)) = (
                 nodes.iter().find(|n| n.id == edge.source),
                 nodes.iter().find(|n| n.id == edge.target),
@@ -506,4 +529,4 @@ impl RuleBasedValidator {
 
         false
     }
-} 
+}

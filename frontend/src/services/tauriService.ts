@@ -1,5 +1,18 @@
 import { invoke } from '@tauri-apps/api/tauri'
-import { VisualGraph, CompilationResult, ValidationResult, NodeDefinition } from '../types'
+import { VisualGraph, CompilationResult, ValidationResult, NodeDefinition, ExecutionStep } from '../types'
+
+export interface ExecutionTrace {
+    steps: ExecutionStep[]
+    total_gas: number
+    success: boolean
+}
+
+export interface DebugState {
+    state: 'running' | 'paused' | 'stepping' | 'finished' | 'error'
+    current_step: number
+    total_steps: number
+    variables: Record<string, any>
+}
 
 export class TauriService {
     static async compileContract(graph: VisualGraph, optimizationLevel: number = 1): Promise<CompilationResult> {
@@ -54,6 +67,85 @@ export class TauriService {
             return result as NodeDefinition[]
         } catch (error) {
             throw new Error(`Failed to get node definitions: ${error}`)
+        }
+    }
+
+    static async debugStart(graph: VisualGraph): Promise<DebugState> {
+        try {
+            const result = await invoke('debug_start', { graph })
+            return {
+                state: 'paused',
+                current_step: 0,
+                total_steps: (result as any).total_steps || 0,
+                variables: {}
+            }
+        } catch (error) {
+            throw new Error(`Debug start failed: ${error}`)
+        }
+    }
+
+    static async debugStep(): Promise<DebugState> {
+        try {
+            const result = await invoke('debug_step')
+            return {
+                state: 'stepping',
+                current_step: (result as any).current_step || 0,
+                total_steps: (result as any).total_steps || 0,
+                variables: (result as any).variables || {}
+            }
+        } catch (error) {
+            throw new Error(`Debug step failed: ${error}`)
+        }
+    }
+
+    static async debugContinue(): Promise<DebugState> {
+        try {
+            const result = await invoke('debug_continue')
+            return {
+                state: 'finished',
+                current_step: (result as any).current_step || 0,
+                total_steps: (result as any).total_steps || 0,
+                variables: (result as any).variables || {}
+            }
+        } catch (error) {
+            throw new Error(`Debug continue failed: ${error}`)
+        }
+    }
+
+    static async debugGetTrace(): Promise<ExecutionTrace> {
+        try {
+            const result = await invoke('debug_get_trace')
+            return {
+                steps: (result as any).trace || [],
+                total_gas: (result as any).total_gas || 0,
+                success: (result as any).success_at_end || false
+            }
+        } catch (error) {
+            throw new Error(`Debug get trace failed: ${error}`)
+        }
+    }
+
+    static async queryHistory(contractAddress: string, queryType: 'blocks' | 'transactions' | 'events'): Promise<any> {
+        try {
+            return await invoke('query_history', { contractAddress, queryType })
+        } catch (error) {
+            throw new Error(`Query history failed: ${error}`)
+        }
+    }
+
+    static async verifyProof(proof: any): Promise<boolean> {
+        try {
+            return await invoke('verify_proof', { proof }) as boolean
+        } catch (error) {
+            throw new Error(`Proof verification failed: ${error}`)
+        }
+    }
+
+    static async exportAuditBundle(graph: VisualGraph): Promise<any> {
+        try {
+            return await invoke('export_audit_bundle', { graph })
+        } catch (error) {
+            throw new Error(`Audit bundle export failed: ${error}`)
         }
     }
 }

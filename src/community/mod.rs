@@ -2,16 +2,16 @@
 
 use crate::{
     error::{CanvasError, CanvasResult},
-    types::{Graph, Node, NodeId},
     marketplace::{MarketplaceItem, UserProfile},
+    types::{Graph, Node, NodeId},
 };
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// User role in the community
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum UserRole {
     Guest,
     User,
@@ -95,7 +95,7 @@ pub struct ProjectCollaborator {
 }
 
 /// Collaborator role
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum CollaboratorRole {
     Viewer,
     Editor,
@@ -121,7 +121,7 @@ pub enum ProjectVisibility {
 }
 
 /// Project status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ProjectStatus {
     Draft,
     InProgress,
@@ -165,7 +165,7 @@ pub struct ForumPost {
 }
 
 /// Post status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PostStatus {
     Active,
     Closed,
@@ -200,7 +200,7 @@ pub enum TutorialDifficulty {
 }
 
 /// Tutorial status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TutorialStatus {
     Draft,
     Published,
@@ -237,7 +237,9 @@ impl CommunityManager {
     ) -> CanvasResult<String> {
         // Check if username already exists
         if self.users.values().any(|u| u.username == username) {
-            return Err(CanvasError::Validation("Username already exists".to_string()));
+            return Err(CanvasError::Validation(
+                "Username already exists".to_string(),
+            ));
         }
 
         // Check if email already exists
@@ -251,7 +253,7 @@ impl CommunityManager {
         let user = CommunityUser {
             id: user_id.clone(),
             username,
-            email,
+            email: email.clone(),
             role: UserRole::User,
             permissions: UserPermissions {
                 can_publish: true,
@@ -298,16 +300,15 @@ impl CommunityManager {
     }
 
     /// Update user profile
-    pub fn update_user_profile(
-        &mut self,
-        user_id: &str,
-        profile: UserProfile,
-    ) -> CanvasResult<()> {
+    pub fn update_user_profile(&mut self, user_id: &str, profile: UserProfile) -> CanvasResult<()> {
         if let Some(user) = self.users.get_mut(user_id) {
             user.profile = profile;
             Ok(())
         } else {
-            Err(CanvasError::NotFound(format!("User '{}' not found", user_id)))
+            Err(CanvasError::NotFound(format!(
+                "User '{}' not found",
+                user_id
+            )))
         }
     }
 
@@ -320,7 +321,10 @@ impl CommunityManager {
         graph: Graph,
     ) -> CanvasResult<String> {
         if !self.users.contains_key(&owner_id) {
-            return Err(CanvasError::NotFound(format!("User '{}' not found", owner_id)));
+            return Err(CanvasError::NotFound(format!(
+                "User '{}' not found",
+                owner_id
+            )));
         }
 
         let project_id = format!("project_{}", uuid::Uuid::new_v4());
@@ -359,9 +363,15 @@ impl CommunityManager {
     ) -> CanvasResult<()> {
         if let Some(project) = self.projects.get_mut(project_id) {
             // Check permissions
-            if project.owner_id != user_id && 
-               !project.collaborators.iter().any(|c| c.user_id == user_id && c.role == CollaboratorRole::Admin) {
-                return Err(CanvasError::PermissionDenied("Insufficient permissions".to_string()));
+            if project.owner_id != user_id
+                && !project
+                    .collaborators
+                    .iter()
+                    .any(|c| c.user_id == user_id && c.role == CollaboratorRole::Admin)
+            {
+                return Err(CanvasError::PermissionDenied(
+                    "Insufficient permissions".to_string(),
+                ));
             }
 
             // Apply updates
@@ -384,7 +394,10 @@ impl CommunityManager {
             project.updated_at = Utc::now();
             Ok(())
         } else {
-            Err(CanvasError::NotFound(format!("Project '{}' not found", project_id)))
+            Err(CanvasError::NotFound(format!(
+                "Project '{}' not found",
+                project_id
+            )))
         }
     }
 
@@ -398,11 +411,16 @@ impl CommunityManager {
     ) -> CanvasResult<()> {
         if let Some(project) = self.projects.get_mut(project_id) {
             if project.owner_id != owner_id {
-                return Err(CanvasError::PermissionDenied("Only project owner can add collaborators".to_string()));
+                return Err(CanvasError::PermissionDenied(
+                    "Only project owner can add collaborators".to_string(),
+                ));
             }
 
             if !self.users.contains_key(collaborator_id) {
-                return Err(CanvasError::NotFound(format!("User '{}' not found", collaborator_id)));
+                return Err(CanvasError::NotFound(format!(
+                    "User '{}' not found",
+                    collaborator_id
+                )));
             }
 
             let permissions = match role {
@@ -439,7 +457,10 @@ impl CommunityManager {
             project.collaborators.push(collaborator);
             Ok(())
         } else {
-            Err(CanvasError::NotFound(format!("Project '{}' not found", project_id)))
+            Err(CanvasError::NotFound(format!(
+                "Project '{}' not found",
+                project_id
+            )))
         }
     }
 
@@ -451,7 +472,10 @@ impl CommunityManager {
         parent_id: Option<String>,
     ) -> CanvasResult<String> {
         if !self.users.contains_key(author_id) {
-            return Err(CanvasError::NotFound(format!("User '{}' not found", author_id)));
+            return Err(CanvasError::NotFound(format!(
+                "User '{}' not found",
+                author_id
+            )));
         }
 
         let comment_id = format!("comment_{}", uuid::Uuid::new_v4());
@@ -492,7 +516,10 @@ impl CommunityManager {
         tags: Vec<String>,
     ) -> CanvasResult<String> {
         if !self.users.contains_key(&author_id) {
-            return Err(CanvasError::NotFound(format!("User '{}' not found", author_id)));
+            return Err(CanvasError::NotFound(format!(
+                "User '{}' not found",
+                author_id
+            )));
         }
 
         let post_id = format!("post_{}", uuid::Uuid::new_v4());
@@ -524,8 +551,7 @@ impl CommunityManager {
         self.forum_posts
             .values()
             .filter(|p| {
-                category.map_or(true, |c| p.category == c) && 
-                p.status == PostStatus::Active
+                category.map_or(true, |c| p.category == c) && p.status == PostStatus::Active
             })
             .collect()
     }
@@ -542,7 +568,10 @@ impl CommunityManager {
         tags: Vec<String>,
     ) -> CanvasResult<String> {
         if !self.users.contains_key(&author_id) {
-            return Err(CanvasError::NotFound(format!("User '{}' not found", author_id)));
+            return Err(CanvasError::NotFound(format!(
+                "User '{}' not found",
+                author_id
+            )));
         }
 
         let tutorial_id = format!("tutorial_{}", uuid::Uuid::new_v4());
@@ -573,8 +602,9 @@ impl CommunityManager {
         self.tutorials
             .values()
             .filter(|t| {
-                difficulty.as_ref().map_or(true, |d| std::mem::discriminant(&t.difficulty) == std::mem::discriminant(d)) &&
-                t.status == TutorialStatus::Published
+                difficulty.as_ref().map_or(true, |d| {
+                    std::mem::discriminant(&t.difficulty) == std::mem::discriminant(d)
+                }) && t.status == TutorialStatus::Published
             })
             .collect()
     }
@@ -582,7 +612,9 @@ impl CommunityManager {
     /// Follow user
     pub fn follow_user(&mut self, follower_id: &str, followed_id: &str) -> CanvasResult<()> {
         if follower_id == followed_id {
-            return Err(CanvasError::Validation("Cannot follow yourself".to_string()));
+            return Err(CanvasError::Validation(
+                "Cannot follow yourself".to_string(),
+            ));
         }
 
         if let Some(follower) = self.users.get_mut(follower_id) {
@@ -590,7 +622,10 @@ impl CommunityManager {
                 follower.following.push(followed_id.to_string());
             }
         } else {
-            return Err(CanvasError::NotFound(format!("User '{}' not found", follower_id)));
+            return Err(CanvasError::NotFound(format!(
+                "User '{}' not found",
+                follower_id
+            )));
         }
 
         if let Some(followed) = self.users.get_mut(followed_id) {
@@ -598,7 +633,10 @@ impl CommunityManager {
                 followed.followers.push(follower_id.to_string());
             }
         } else {
-            return Err(CanvasError::NotFound(format!("User '{}' not found", followed_id)));
+            return Err(CanvasError::NotFound(format!(
+                "User '{}' not found",
+                followed_id
+            )));
         }
 
         Ok(())
@@ -625,17 +663,36 @@ impl CommunityManager {
             }
             Ok(())
         } else {
-            Err(CanvasError::NotFound(format!("User '{}' not found", user_id)))
+            Err(CanvasError::NotFound(format!(
+                "User '{}' not found",
+                user_id
+            )))
         }
     }
 
     /// Get user statistics
     pub fn get_user_stats(&self, user_id: &str) -> Option<UserStats> {
         if let Some(user) = self.users.get(user_id) {
-            let projects_count = self.projects.values().filter(|p| p.owner_id == user_id).count();
-            let comments_count = self.comments.values().filter(|c| c.author_id == user_id).count();
-            let posts_count = self.forum_posts.values().filter(|p| p.author_id == user_id).count();
-            let tutorials_count = self.tutorials.values().filter(|t| t.author_id == user_id).count();
+            let projects_count = self
+                .projects
+                .values()
+                .filter(|p| p.owner_id == user_id)
+                .count();
+            let comments_count = self
+                .comments
+                .values()
+                .filter(|c| c.author_id == user_id)
+                .count();
+            let posts_count = self
+                .forum_posts
+                .values()
+                .filter(|p| p.author_id == user_id)
+                .count();
+            let tutorials_count = self
+                .tutorials
+                .values()
+                .filter(|t| t.author_id == user_id)
+                .count();
 
             Some(UserStats {
                 user_id: user_id.to_string(),
@@ -685,12 +742,14 @@ mod tests {
     #[test]
     fn test_user_registration() {
         let mut manager = CommunityManager::new();
-        
-        let user_id = manager.register_user(
-            "testuser".to_string(),
-            "test@example.com".to_string(),
-            "password_hash".to_string(),
-        ).unwrap();
+
+        let user_id = manager
+            .register_user(
+                "testuser".to_string(),
+                "test@example.com".to_string(),
+                "password_hash".to_string(),
+            )
+            .unwrap();
 
         assert!(manager.get_user(&user_id).is_some());
         assert!(manager.get_user_by_username("testuser").is_some());
@@ -699,12 +758,14 @@ mod tests {
     #[test]
     fn test_duplicate_username_registration() {
         let mut manager = CommunityManager::new();
-        
-        manager.register_user(
-            "testuser".to_string(),
-            "test1@example.com".to_string(),
-            "password_hash".to_string(),
-        ).unwrap();
+
+        manager
+            .register_user(
+                "testuser".to_string(),
+                "test1@example.com".to_string(),
+                "password_hash".to_string(),
+            )
+            .unwrap();
 
         let result = manager.register_user(
             "testuser".to_string(),
@@ -718,20 +779,24 @@ mod tests {
     #[test]
     fn test_project_creation() {
         let mut manager = CommunityManager::new();
-        
-        let user_id = manager.register_user(
-            "testuser".to_string(),
-            "test@example.com".to_string(),
-            "password_hash".to_string(),
-        ).unwrap();
+
+        let user_id = manager
+            .register_user(
+                "testuser".to_string(),
+                "test@example.com".to_string(),
+                "password_hash".to_string(),
+            )
+            .unwrap();
 
         let graph = Graph::new();
-        let project_id = manager.create_project(
-            "Test Project".to_string(),
-            "A test project".to_string(),
-            user_id.clone(),
-            graph,
-        ).unwrap();
+        let project_id = manager
+            .create_project(
+                "Test Project".to_string(),
+                "A test project".to_string(),
+                user_id.clone(),
+                graph,
+            )
+            .unwrap();
 
         assert!(manager.get_project(&project_id).is_some());
     }
@@ -739,18 +804,22 @@ mod tests {
     #[test]
     fn test_follow_user() {
         let mut manager = CommunityManager::new();
-        
-        let user1_id = manager.register_user(
-            "user1".to_string(),
-            "user1@example.com".to_string(),
-            "password_hash".to_string(),
-        ).unwrap();
 
-        let user2_id = manager.register_user(
-            "user2".to_string(),
-            "user2@example.com".to_string(),
-            "password_hash".to_string(),
-        ).unwrap();
+        let user1_id = manager
+            .register_user(
+                "user1".to_string(),
+                "user1@example.com".to_string(),
+                "password_hash".to_string(),
+            )
+            .unwrap();
+
+        let user2_id = manager
+            .register_user(
+                "user2".to_string(),
+                "user2@example.com".to_string(),
+                "password_hash".to_string(),
+            )
+            .unwrap();
 
         manager.follow_user(&user1_id, &user2_id).unwrap();
 
@@ -764,16 +833,18 @@ mod tests {
     #[test]
     fn test_user_stats() {
         let mut manager = CommunityManager::new();
-        
-        let user_id = manager.register_user(
-            "testuser".to_string(),
-            "test@example.com".to_string(),
-            "password_hash".to_string(),
-        ).unwrap();
+
+        let user_id = manager
+            .register_user(
+                "testuser".to_string(),
+                "test@example.com".to_string(),
+                "password_hash".to_string(),
+            )
+            .unwrap();
 
         let stats = manager.get_user_stats(&user_id).unwrap();
         assert_eq!(stats.projects_count, 0);
         assert_eq!(stats.followers_count, 0);
         assert_eq!(stats.following_count, 0);
     }
-} 
+}

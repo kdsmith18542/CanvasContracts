@@ -4,37 +4,41 @@
 //! visual smart contracts using WebAssembly.
 
 // ── Core modules ─────────────────────────────────────────────────────
-pub mod compiler;
-pub mod nodes;
-pub mod wasm;
+pub mod adapter;
 pub mod baals;
+pub mod compiler;
+pub mod config;
 pub mod debugger;
 pub mod error;
+pub mod nodes;
 pub mod types;
-pub mod config;
+pub mod wasm;
 
-// ── Future modules (on disk for reference, not yet compilable) ──────
-// pub mod ai;
-// pub mod marketplace;
-// pub mod sdk;
-// pub mod community;
-// pub mod deployment;
-// pub mod monitoring;
-// pub mod optimization;
-// pub mod nodes::custom;
+// ── Ungated modules ──────────────────────────────────────────────────
+pub mod ai;
+pub mod community;
+pub mod deployment;
+pub mod marketplace;
+pub mod monitoring;
+pub mod optimization;
+pub mod sdk;
 
 // NOTE: Removed the separate src/validator.rs — consolidated on compiler::Validator.
 
 pub use error::{CanvasError, CanvasResult};
-pub use types::*;
 pub use serde::{Deserialize, Serialize};
+pub use types::*;
 
+pub use adapter::{
+    create_chrononode_client, BaaLSAdapter, ChronoNodeClient, HttpChronoNodeClient, LedgerAdapter,
+    MockChronoNodeClient, RuntimeInfo,
+};
+pub use baals::{create_client, sign_payload, BaalsClient, MockBaalsClient};
 /// Re-export commonly used types
 pub use compiler::Compiler;
+pub use debugger::{DebugConfig, DebugSession, DebuggerUtils};
 pub use nodes::{Node, NodeContext, NodeDefinition, NodeRegistry};
-pub use wasm::WasmRuntime;
-pub use baals::{BaalsClient, create_client, sign_payload, MockBaalsClient};
-pub use debugger::{DebugSession, DebuggerUtils, DebugConfig};
+pub use wasm::{WasmModule, WasmRuntime};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

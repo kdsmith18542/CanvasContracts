@@ -15,19 +15,18 @@ import {
 import '@xyflow/react/dist/style.css'
 import { nodeTypes } from './nodes'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { GasVisualizer } from './GasVisualizer'
 
 const initialNodes: Node[] = [
     {
         id: '1',
         type: 'start',
-        data: { label: 'Start' },
+        data: { label: 'Start', gasVisualizerActive: false },
         position: { x: 250, y: 25 },
     },
 ]
 
 const initialEdges: Edge[] = []
-
-const flowKey = 'canvas-flow'
 
 interface CanvasEditorInnerProps {
     onNodeSelect: (node: Node | null) => void
@@ -36,7 +35,22 @@ interface CanvasEditorInnerProps {
 const CanvasEditorInner: React.FC<CanvasEditorInnerProps> = ({ onNodeSelect }) => {
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
-    const { addNode: storeAddNode, removeNode: storeRemoveNode, addEdge: storeAddEdge, undo, redo } = useCanvasStore()
+    const [gasActive, setGasActive] = useState(false)
+    const { addNode: storeAddNode, addEdge: storeAddEdge, undo, redo } = useCanvasStore()
+
+    const toggleGas = useCallback(() => {
+        setGasActive(active => {
+            const next = !active;
+            setNodes(nds => nds.map(n => ({
+                ...n,
+                data: {
+                    ...n.data,
+                    gasVisualizerActive: next
+                }
+            })));
+            return next;
+        });
+    }, [setNodes]);
 
     const onConnect = useCallback(
         (params: Connection) => {
@@ -83,7 +97,7 @@ const CanvasEditorInner: React.FC<CanvasEditorInnerProps> = ({ onNodeSelect }) =
                 id: `${type}-${Date.now()}`,
                 type: 'default',
                 position,
-                data: { label: type },
+                data: { label: type, gasVisualizerActive: gasActive },
             }
 
             setNodes((nds) => {
@@ -91,7 +105,7 @@ const CanvasEditorInner: React.FC<CanvasEditorInnerProps> = ({ onNodeSelect }) =
                 return nds.concat(newNode)
             })
         },
-        [setNodes, storeAddNode],
+        [setNodes, storeAddNode, gasActive],
     )
 
     useEffect(() => {
@@ -110,7 +124,7 @@ const CanvasEditorInner: React.FC<CanvasEditorInnerProps> = ({ onNodeSelect }) =
     }, [undo, redo])
 
     return (
-        <div className="flex-1 bg-gray-50">
+        <div className="flex-1 bg-gray-50 relative h-full">
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -128,6 +142,7 @@ const CanvasEditorInner: React.FC<CanvasEditorInnerProps> = ({ onNodeSelect }) =
                 <Background />
                 <MiniMap />
             </ReactFlow>
+            <GasVisualizer active={gasActive} onToggle={toggleGas} />
         </div>
     )
 }

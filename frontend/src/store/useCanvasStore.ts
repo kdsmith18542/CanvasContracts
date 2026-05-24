@@ -35,8 +35,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     return {
         graph: {
+            name: "MyContract",
             nodes: [],
-            edges: []
+            edges: [],
+            metadata: {}
         },
         compilationResult: null,
         validationResult: null,

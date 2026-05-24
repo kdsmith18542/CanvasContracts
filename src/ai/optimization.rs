@@ -1,9 +1,9 @@
 use crate::{
     error::CanvasResult,
-    types::{Graph, NodeId, NodeType},
+    types::{NodeId, NodeType, VisualGraph},
 };
 
-use super::{OptimizationSuggestion, OptimizationResult};
+use super::{OptimizationResult, OptimizationSuggestion};
 
 /// Optimization engine for gas efficiency
 pub struct OptimizationEngine {
@@ -42,10 +42,10 @@ impl OptimizationEngine {
     }
 
     /// Optimize contract for gas efficiency
-    pub fn optimize(&self, graph: &Graph) -> CanvasResult<OptimizationResult> {
+    pub fn optimize(&self, graph: &VisualGraph) -> CanvasResult<OptimizationResult> {
         let original_gas = self.estimate_gas_usage(graph);
         let suggestions = self.generate_optimization_suggestions(graph)?;
-        
+
         let total_savings: u64 = suggestions.iter().map(|s| s.estimated_gas_savings).sum();
         let optimized_gas = original_gas.saturating_sub(total_savings);
 
@@ -59,11 +59,11 @@ impl OptimizationEngine {
     }
 
     /// Estimate gas usage for a graph
-    pub fn estimate_gas_usage(&self, graph: &Graph) -> u64 {
-        let nodes = graph.get_nodes();
+    pub fn estimate_gas_usage(&self, graph: &VisualGraph) -> u64 {
+        let nodes = graph.to_nodes();
         let mut total_gas = 0u64;
 
-        for node in nodes {
+        for node in &nodes {
             // Base cost for node type
             if let Some(base_cost) = self.gas_costs.base_costs.get(&node.node_type) {
                 total_gas += base_cost;
@@ -74,14 +74,17 @@ impl OptimizationEngine {
         }
 
         // Edge costs (connections between nodes)
-        let edges = graph.get_edges();
+        let edges = graph.to_edges();
         total_gas += edges.len() as u64 * 10; // Base cost per connection
 
         total_gas
     }
 
     /// Generate optimization suggestions
-    pub fn generate_optimization_suggestions(&self, graph: &Graph) -> CanvasResult<Vec<OptimizationSuggestion>> {
+    pub fn generate_optimization_suggestions(
+        &self,
+        graph: &VisualGraph,
+    ) -> CanvasResult<Vec<OptimizationSuggestion>> {
         let mut suggestions = Vec::new();
 
         // Apply optimization rules
@@ -128,14 +131,38 @@ impl OptimizationEngine {
                 // Control flow is cheap
                 cost += 1; // JUMP cost
             }
+            NodeType::Cryptographic => {
+                // Crypto operations are moderate
+                cost += 100;
+            }
+            NodeType::Time => {
+                // Time operations are cheap
+                cost += 10;
+            }
+            NodeType::Custom => {
+                // Custom nodes vary widely
+                cost += 100;
+            }
+            NodeType::Start | NodeType::End => {
+                // Start/End have no cost
+                cost += 0;
+            }
+            NodeType::Resurgence => {
+                // Resurgence operations are moderate
+                cost += 50;
+            }
         }
 
         cost
     }
 
     /// Find nodes that match a pattern
-    fn find_matching_pattern(&self, graph: &Graph, pattern: &[NodeType]) -> Option<Vec<NodeId>> {
-        let nodes = graph.get_nodes();
+    fn find_matching_pattern(
+        &self,
+        graph: &VisualGraph,
+        pattern: &[NodeType],
+    ) -> Option<Vec<NodeId>> {
+        let nodes = graph.to_nodes();
         let mut matching_nodes = Vec::new();
 
         for window in nodes.windows(pattern.len()) {
@@ -150,12 +177,18 @@ impl OptimizationEngine {
     }
 
     /// Analyze custom optimizations
-    fn analyze_custom_optimizations(&self, graph: &Graph) -> CanvasResult<Vec<OptimizationSuggestion>> {
+    fn analyze_custom_optimizations(
+        &self,
+        graph: &VisualGraph,
+    ) -> CanvasResult<Vec<OptimizationSuggestion>> {
         let mut suggestions = Vec::new();
-        let nodes = graph.get_nodes();
+        let nodes = graph.to_nodes();
 
         // Check for redundant state operations
-        let state_nodes: Vec<_> = nodes.iter().filter(|n| n.node_type == NodeType::State).collect();
+        let state_nodes: Vec<_> = nodes
+            .iter()
+            .filter(|n| n.node_type == NodeType::State)
+            .collect();
         if state_nodes.len() > 5 {
             suggestions.push(OptimizationSuggestion {
                 title: "Reduce State Operations".to_string(),
@@ -167,7 +200,10 @@ impl OptimizationEngine {
         }
 
         // Check for expensive external calls
-        let external_nodes: Vec<_> = nodes.iter().filter(|n| n.node_type == NodeType::External).collect();
+        let external_nodes: Vec<_> = nodes
+            .iter()
+            .filter(|n| n.node_type == NodeType::External)
+            .collect();
         if external_nodes.len() > 3 {
             suggestions.push(OptimizationSuggestion {
                 title: "Optimize External Calls".to_string(),
@@ -179,14 +215,18 @@ impl OptimizationEngine {
         }
 
         // Check for inefficient arithmetic patterns
-        let arithmetic_nodes: Vec<_> = nodes.iter().filter(|n| n.node_type == NodeType::Arithmetic).collect();
+        let arithmetic_nodes: Vec<_> = nodes
+            .iter()
+            .filter(|n| n.node_type == NodeType::Arithmetic)
+            .collect();
         if arithmetic_nodes.len() > 10 {
             suggestions.push(OptimizationSuggestion {
                 title: "Optimize Arithmetic Operations".to_string(),
                 description: "Consider using bit shifting for power-of-2 operations".to_string(),
                 estimated_gas_savings: arithmetic_nodes.len() as u64 * 10,
                 nodes: arithmetic_nodes.iter().map(|n| n.id.clone()).collect(),
-                implementation: "Replace multiplication/division by powers of 2 with bit shifts".to_string(),
+                implementation: "Replace multiplication/division by powers of 2 with bit shifts"
+                    .to_string(),
             });
         }
 
@@ -229,11 +269,14 @@ impl OptimizationEngine {
             // Replace multiple additions with single operation
             OptimizationRule {
                 name: "Batch Arithmetic Operations".to_string(),
-                description: "Combine multiple arithmetic operations into a single operation".to_string(),
+                description: "Combine multiple arithmetic operations into a single operation"
+                    .to_string(),
                 pattern: vec![NodeType::Arithmetic, NodeType::Arithmetic],
                 replacement: vec![NodeType::Arithmetic],
                 gas_savings: 3,
-                implementation: "Use compound assignment operators (e.g., a += b instead of a = a + b)".to_string(),
+                implementation:
+                    "Use compound assignment operators (e.g., a += b instead of a = a + b)"
+                        .to_string(),
             },
             // Optimize storage access patterns
             OptimizationRule {
@@ -242,7 +285,8 @@ impl OptimizationEngine {
                 pattern: vec![NodeType::State, NodeType::Logic, NodeType::State],
                 replacement: vec![NodeType::State, NodeType::Logic],
                 gas_savings: 100,
-                implementation: "Store storage value in memory variable for multiple uses".to_string(),
+                implementation: "Store storage value in memory variable for multiple uses"
+                    .to_string(),
             },
             // Reduce external calls
             OptimizationRule {
@@ -264,4 +308,4 @@ impl OptimizationEngine {
             },
         ]
     }
-} 
+}

@@ -2,13 +2,13 @@
 
 use crate::{
     error::{CanvasError, CanvasResult},
-    types::{Graph, Node, NodeId},
     nodes::custom::CustomNodeDefinition,
+    types::{Graph, Node, NodeId},
 };
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Marketplace item types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,7 +198,7 @@ impl MarketplaceClient {
     ) -> CanvasResult<Vec<MarketplaceItem>> {
         // TODO: Implement actual API call
         log::info!("Searching marketplace for: {}", query);
-        
+
         // Mock response for now
         Ok(vec![])
     }
@@ -212,7 +212,7 @@ impl MarketplaceClient {
 
         // TODO: Implement actual API call
         log::info!("Fetching item details for: {}", item_id);
-        
+
         // Mock response for now
         let item = MarketplaceItem {
             id: item_id.to_string(),
@@ -243,7 +243,7 @@ impl MarketplaceClient {
     pub async fn download_item(&self, item_id: &str) -> CanvasResult<Vec<u8>> {
         // TODO: Implement actual download
         log::info!("Downloading item: {}", item_id);
-        
+
         // Mock response for now
         Ok(vec![0u8; 1024])
     }
@@ -256,7 +256,7 @@ impl MarketplaceClient {
     ) -> CanvasResult<String> {
         // TODO: Implement actual upload
         log::info!("Uploading item: {}", item.name);
-        
+
         // Mock response for now
         Ok("uploaded_item_id".to_string())
     }
@@ -265,7 +265,7 @@ impl MarketplaceClient {
     pub async fn get_user_profile(&self, username: &str) -> CanvasResult<UserProfile> {
         // TODO: Implement actual API call
         log::info!("Fetching user profile for: {}", username);
-        
+
         // Mock response for now
         Ok(UserProfile {
             username: username.to_string(),
@@ -293,7 +293,7 @@ impl MarketplaceClient {
     ) -> CanvasResult<Vec<Review>> {
         // TODO: Implement actual API call
         log::info!("Fetching reviews for item: {}", item_id);
-        
+
         // Mock response for now
         Ok(vec![])
     }
@@ -309,7 +309,7 @@ impl MarketplaceClient {
     pub async fn get_trending_items(&self, limit: u32) -> CanvasResult<Vec<MarketplaceItem>> {
         // TODO: Implement actual API call
         log::info!("Fetching trending items");
-        
+
         // Mock response for now
         Ok(vec![])
     }
@@ -322,7 +322,7 @@ impl MarketplaceClient {
     ) -> CanvasResult<Vec<MarketplaceItem>> {
         // TODO: Implement actual API call
         log::info!("Fetching recommended items for user: {}", user_id);
-        
+
         // Mock response for now
         Ok(vec![])
     }
@@ -412,14 +412,22 @@ impl LocalMarketplace {
             .values()
             .filter(|item| {
                 // Basic search implementation
-                let matches_query = query.is_empty() || 
-                    item.name.to_lowercase().contains(&query.to_lowercase()) ||
-                    item.description.to_lowercase().contains(&query.to_lowercase()) ||
-                    item.tags.iter().any(|tag| tag.to_lowercase().contains(&query.to_lowercase()));
+                let matches_query = query.is_empty()
+                    || item.name.to_lowercase().contains(&query.to_lowercase())
+                    || item
+                        .description
+                        .to_lowercase()
+                        .contains(&query.to_lowercase())
+                    || item
+                        .tags
+                        .iter()
+                        .any(|tag| tag.to_lowercase().contains(&query.to_lowercase()));
 
-                let matches_type = filters.item_type.as_ref().map_or(true, |t| std::mem::discriminant(&item.item_type) == std::mem::discriminant(t));
+                let matches_type = filters.item_type.as_ref().map_or(true, |t| {
+                    std::mem::discriminant(&item.item_type) == std::mem::discriminant(t)
+                });
                 let matches_rating = filters.min_rating.map_or(true, |r| item.rating >= r);
-                let matches_price = filters.free_only.map_or(true, |free| !free || item.price.is_none());
+                let matches_price = !filters.free_only || item.price.is_none();
 
                 matches_query && matches_type && matches_rating && matches_price
             })
@@ -469,7 +477,7 @@ mod tests {
     #[test]
     fn test_local_marketplace_operations() {
         let mut marketplace = LocalMarketplace::new();
-        
+
         // Create a sample custom node item
         let metadata = MarketplaceItem {
             id: "test-node".to_string(),
@@ -507,11 +515,11 @@ mod tests {
 
         // Add item
         assert!(marketplace.add_custom_node(custom_node_item).is_ok());
-        
+
         // Verify item was added
         assert!(marketplace.get_item("test-node").is_some());
         assert_eq!(marketplace.get_custom_nodes().len(), 1);
-        
+
         // Test search
         let filters = SearchFilters {
             item_type: None,
@@ -524,10 +532,10 @@ mod tests {
             difficulty: None,
             date_range: None,
         };
-        
+
         let results = marketplace.search_items("test", &filters);
         assert_eq!(results.len(), 1);
-        
+
         // Remove item
         assert!(marketplace.remove_item("test-node").is_ok());
         assert!(marketplace.get_item("test-node").is_none());
@@ -538,8 +546,8 @@ mod tests {
         let client = MarketplaceClient::new("https://api.example.com".to_string());
         assert_eq!(client.api_url, "https://api.example.com");
         assert!(client.api_key.is_none());
-        
+
         let client_with_key = client.with_api_key("test_key".to_string());
         assert_eq!(client_with_key.api_key, Some("test_key".to_string()));
     }
-} 
+}

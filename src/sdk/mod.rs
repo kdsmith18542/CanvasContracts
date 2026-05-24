@@ -1,12 +1,12 @@
 //! Developer SDK for Canvas Contracts
 
 use crate::{
-    error::{CanvasError, CanvasResult},
-    types::{Graph, Node, NodeId, NodeType},
-    nodes::custom::{CustomNodeDefinition, CustomNodeBuilder},
     compiler::Compiler,
-    wasm::WasmRuntime,
     config::Config,
+    error::{CanvasError, CanvasResult},
+    nodes::custom::{CustomNodeBuilder, CustomNodeDefinition},
+    types::{Connection, NodeId, NodeType, Position, ValueType, VisualGraph, VisualNode},
+    wasm::WasmRuntime,
 };
 
 use serde::{Deserialize, Serialize};
@@ -27,25 +27,25 @@ pub struct SdkConfig {
 pub trait CanvasPlugin {
     /// Plugin name
     fn name(&self) -> &str;
-    
+
     /// Plugin version
     fn version(&self) -> &str;
-    
+
     /// Plugin description
     fn description(&self) -> &str;
-    
+
     /// Initialize the plugin
     fn initialize(&mut self, config: &SdkConfig) -> CanvasResult<()>;
-    
+
     /// Cleanup the plugin
     fn cleanup(&mut self) -> CanvasResult<()>;
-    
+
     /// Get plugin capabilities
     fn capabilities(&self) -> Vec<PluginCapability>;
 }
 
 /// Plugin capability
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PluginCapability {
     CustomNodes,
     Templates,
@@ -74,15 +74,18 @@ impl PluginRegistry {
     /// Register a plugin
     pub fn register_plugin(&mut self, plugin: Box<dyn CanvasPlugin>) -> CanvasResult<()> {
         let name = plugin.name().to_string();
-        
+
         if self.plugins.contains_key(&name) {
-            return Err(CanvasError::Validation(format!("Plugin '{}' already registered", name)));
+            return Err(CanvasError::Validation(format!(
+                "Plugin '{}' already registered",
+                name
+            )));
         }
 
         // Initialize the plugin
         let mut plugin_mut = plugin;
         plugin_mut.initialize(&self.config)?;
-        
+
         self.plugins.insert(name, plugin_mut);
         Ok(())
     }
@@ -98,12 +101,13 @@ impl PluginRegistry {
     }
 
     /// Get plugins by capability
-    pub fn get_plugins_by_capability(&self, capability: &PluginCapability) -> Vec<&Box<dyn CanvasPlugin>> {
+    pub fn get_plugins_by_capability(
+        &self,
+        capability: &PluginCapability,
+    ) -> Vec<&Box<dyn CanvasPlugin>> {
         self.plugins
             .values()
-            .filter(|plugin| {
-                plugin.capabilities().contains(capability)
-            })
+            .filter(|plugin| plugin.capabilities().contains(capability))
             .collect()
     }
 
@@ -113,14 +117,17 @@ impl PluginRegistry {
             plugin.cleanup()?;
             Ok(())
         } else {
-            Err(CanvasError::NotFound(format!("Plugin '{}' not found", name)))
+            Err(CanvasError::NotFound(format!(
+                "Plugin '{}' not found",
+                name
+            )))
         }
     }
 }
 
 /// Graph builder for programmatic graph creation
 pub struct GraphBuilder {
-    graph: Graph,
+    graph: VisualGraph,
     node_counter: u32,
 }
 
@@ -128,35 +135,44 @@ impl GraphBuilder {
     /// Create a new graph builder
     pub fn new() -> Self {
         Self {
-            graph: Graph::new(),
+            graph: VisualGraph::new("sdk"),
             node_counter: 0,
         }
     }
 
     /// Add a node to the graph
     pub fn add_node(mut self, node_type: NodeType, position: (f64, f64)) -> Self {
-        let node_id = format!("node_{}", self.node_counter);
+        let node_id = uuid::Uuid::new_v4();
         self.node_counter += 1;
-        
-        let node = Node {
-            id: node_id,
-            node_type,
-            position,
-            properties: HashMap::new(),
-        };
-        
-        self.graph.add_node(node);
+
+        let pos = Position::new(position.0, position.1);
+        let visual_node = VisualNode::new(node_id, format!("{:?}", node_type), pos);
+
+        self.graph.add_node(visual_node);
         self
     }
 
     /// Add a connection between nodes
     pub fn connect(mut self, from: &str, to: &str) -> Self {
-        self.graph.add_edge(from.to_string(), to.to_string());
+        let from_uuid = uuid::Uuid::parse_str(from).unwrap_or_else(|_| uuid::Uuid::new_v4());
+        let to_uuid = uuid::Uuid::parse_str(to).unwrap_or_else(|_| uuid::Uuid::new_v4());
+        let conn = Connection::new(
+            uuid::Uuid::new_v4(),
+            from_uuid,
+            "flow_out",
+            to_uuid,
+            "flow_in",
+        );
+        self.graph.add_connection(conn);
         self
     }
 
     /// Set node properties
-    pub fn set_node_properties(mut self, node_id: &str, properties: HashMap<String, serde_json::Value>) -> Self {
+    pub fn set_node_properties(
+        mut self,
+        node_id: NodeId,
+        properties: HashMap<String, serde_json::Value>,
+    ) -> Self {
         if let Some(node) = self.graph.get_node_mut(node_id) {
             node.properties = properties;
         }
@@ -164,7 +180,7 @@ impl GraphBuilder {
     }
 
     /// Build the graph
-    pub fn build(self) -> Graph {
+    pub fn build(self) -> VisualGraph {
         self.graph
     }
 }
@@ -173,7 +189,7 @@ impl GraphBuilder {
 pub struct TemplateBuilder {
     name: String,
     description: String,
-    graph: Graph,
+    graph: VisualGraph,
     metadata: HashMap<String, serde_json::Value>,
 }
 
@@ -183,7 +199,7 @@ impl TemplateBuilder {
         Self {
             name,
             description,
-            graph: Graph::new(),
+            graph: VisualGraph::new("template"),
             metadata: HashMap::new(),
         }
     }
@@ -195,7 +211,7 @@ impl TemplateBuilder {
     }
 
     /// Set the graph for the template
-    pub fn graph(mut self, graph: Graph) -> Self {
+    pub fn graph(mut self, graph: VisualGraph) -> Self {
         self.graph = graph;
         self
     }
@@ -216,12 +232,12 @@ impl TemplateBuilder {
 pub struct Template {
     pub name: String,
     pub description: String,
-    pub graph: Graph,
+    pub graph: VisualGraph,
     pub metadata: HashMap<String, serde_json::Value>,
 }
 
 /// Export format
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ExportFormat {
     Json,
     Yaml,
@@ -235,13 +251,13 @@ pub enum ExportFormat {
 pub trait Exporter {
     /// Export name
     fn name(&self) -> &str;
-    
+
     /// Export format
     fn format(&self) -> ExportFormat;
-    
+
     /// Export a graph
-    fn export_graph(&self, graph: &Graph) -> CanvasResult<Vec<u8>>;
-    
+    fn export_graph(&self, graph: &VisualGraph) -> CanvasResult<Vec<u8>>;
+
     /// Export a template
     fn export_template(&self, template: &Template) -> CanvasResult<Vec<u8>>;
 }
@@ -250,13 +266,13 @@ pub trait Exporter {
 pub trait Importer {
     /// Importer name
     fn name(&self) -> &str;
-    
+
     /// Supported formats
     fn supported_formats(&self) -> Vec<ExportFormat>;
-    
+
     /// Import a graph
-    fn import_graph(&self, data: &[u8]) -> CanvasResult<Graph>;
-    
+    fn import_graph(&self, data: &[u8]) -> CanvasResult<VisualGraph>;
+
     /// Import a template
     fn import_template(&self, data: &[u8]) -> CanvasResult<Template>;
 }
@@ -265,12 +281,12 @@ pub trait Importer {
 pub trait Validator {
     /// Validator name
     fn name(&self) -> &str;
-    
+
     /// Validate a graph
-    fn validate_graph(&self, graph: &Graph) -> CanvasResult<ValidationResult>;
-    
+    fn validate_graph(&self, graph: &VisualGraph) -> CanvasResult<ValidationResult>;
+
     /// Validate a node
-    fn validate_node(&self, node: &Node) -> CanvasResult<ValidationResult>;
+    fn validate_node(&self, node: &VisualNode) -> CanvasResult<ValidationResult>;
 }
 
 /// Validation result
@@ -313,15 +329,15 @@ pub enum ValidationSeverity {
 pub trait Optimizer {
     /// Optimizer name
     fn name(&self) -> &str;
-    
+
     /// Optimize a graph
-    fn optimize_graph(&self, graph: &Graph) -> CanvasResult<OptimizationResult>;
+    fn optimize_graph(&self, graph: &VisualGraph) -> CanvasResult<OptimizationResult>;
 }
 
 /// Optimization result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationResult {
-    pub optimized_graph: Graph,
+    pub optimized_graph: VisualGraph,
     pub improvements: Vec<OptimizationImprovement>,
     pub estimated_gas_savings: u64,
     pub estimated_performance_gain: f64,
@@ -360,7 +376,7 @@ impl CanvasSdk {
     /// Create a new SDK instance
     pub fn new(config: SdkConfig) -> CanvasResult<Self> {
         let plugin_registry = PluginRegistry::new(config.clone());
-        let compiler = Compiler::new();
+        let compiler = Compiler::new(&Config::default())?;
         let runtime = WasmRuntime::new(&Config::default())?;
 
         Ok(Self {
@@ -401,21 +417,35 @@ impl CanvasSdk {
     }
 
     /// Compile a graph to WASM
-    pub fn compile_graph(&self, graph: &Graph) -> CanvasResult<Vec<u8>> {
-        self.compiler.compile(graph)
+    pub fn compile_graph(&self, graph: &VisualGraph) -> CanvasResult<Vec<u8>> {
+        let result = self.compiler.compile(graph)?;
+        Ok(result.wasm_bytes)
     }
 
     /// Execute a graph
-    pub fn execute_graph(&self, graph: &Graph, inputs: HashMap<String, serde_json::Value>) -> CanvasResult<HashMap<String, serde_json::Value>> {
+    pub fn execute_graph(
+        &self,
+        graph: &VisualGraph,
+        inputs: HashMap<String, serde_json::Value>,
+    ) -> CanvasResult<HashMap<String, serde_json::Value>> {
         // Compile the graph first
         let wasm_bytes = self.compile_graph(graph)?;
-        
+
         // Execute the WASM
-        self.runtime.execute(&wasm_bytes, inputs)
+        let input_value = serde_json::Value::Object(inputs.into_iter().collect());
+        let result = self.runtime.simulate(&wasm_bytes, input_value, 100_000)?;
+        match result.output {
+            serde_json::Value::Object(map) => Ok(map.into_iter().collect()),
+            other => {
+                let mut map = HashMap::new();
+                map.insert("result".to_string(), other);
+                Ok(map)
+            }
+        }
     }
 
     /// Validate a graph using all registered validators
-    pub fn validate_graph(&self, graph: &Graph) -> Vec<ValidationResult> {
+    pub fn validate_graph(&self, graph: &VisualGraph) -> Vec<ValidationResult> {
         self.validators
             .values()
             .filter_map(|validator| validator.validate_graph(graph).ok())
@@ -423,7 +453,7 @@ impl CanvasSdk {
     }
 
     /// Optimize a graph using all registered optimizers
-    pub fn optimize_graph(&self, graph: &Graph) -> Vec<OptimizationResult> {
+    pub fn optimize_graph(&self, graph: &VisualGraph) -> Vec<OptimizationResult> {
         self.optimizers
             .values()
             .filter_map(|optimizer| optimizer.optimize_graph(graph).ok())
@@ -431,25 +461,31 @@ impl CanvasSdk {
     }
 
     /// Export a graph in the specified format
-    pub fn export_graph(&self, graph: &Graph, format: ExportFormat) -> CanvasResult<Vec<u8>> {
+    pub fn export_graph(&self, graph: &VisualGraph, format: ExportFormat) -> CanvasResult<Vec<u8>> {
         for exporter in self.exporters.values() {
             if exporter.format() == format {
                 return exporter.export_graph(graph);
             }
         }
-        
-        Err(CanvasError::NotFound(format!("No exporter found for format: {:?}", format)))
+
+        Err(CanvasError::NotFound(format!(
+            "No exporter found for format: {:?}",
+            format
+        )))
     }
 
     /// Import a graph from the specified format
-    pub fn import_graph(&self, data: &[u8], format: ExportFormat) -> CanvasResult<Graph> {
+    pub fn import_graph(&self, data: &[u8], format: ExportFormat) -> CanvasResult<VisualGraph> {
         for importer in self.importers.values() {
             if importer.supported_formats().contains(&format) {
                 return importer.import_graph(data);
             }
         }
-        
-        Err(CanvasError::NotFound(format!("No importer found for format: {:?}", format)))
+
+        Err(CanvasError::NotFound(format!(
+            "No importer found for format: {:?}",
+            format
+        )))
     }
 
     /// Create a custom node
@@ -496,23 +532,24 @@ mod tests {
             .build();
 
         assert_eq!(graph.get_nodes().len(), 3);
-        assert_eq!(graph.get_edges().len(), 2);
+        assert_eq!(graph.get_connections().len(), 2);
     }
 
     #[test]
     fn test_template_builder() {
-        let graph = Graph::new();
-        let template = TemplateBuilder::new(
-            "Test Template".to_string(),
-            "A test template".to_string(),
-        )
-        .metadata("difficulty".to_string(), serde_json::json!("beginner"))
-        .graph(graph)
-        .build();
+        let graph = VisualGraph::new("test");
+        let template =
+            TemplateBuilder::new("Test Template".to_string(), "A test template".to_string())
+                .metadata("difficulty".to_string(), serde_json::json!("beginner"))
+                .graph(graph)
+                .build();
 
         assert_eq!(template.name, "Test Template");
         assert_eq!(template.description, "A test template");
-        assert_eq!(template.metadata.get("difficulty"), Some(&serde_json::json!("beginner")));
+        assert_eq!(
+            template.metadata.get("difficulty"),
+            Some(&serde_json::json!("beginner"))
+        );
     }
 
     #[test]
@@ -544,4 +581,4 @@ mod tests {
         let mut registry = PluginRegistry::new(config);
         assert_eq!(registry.get_all_plugins().len(), 0);
     }
-} 
+}

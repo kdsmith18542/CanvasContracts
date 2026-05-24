@@ -7,10 +7,7 @@ import {
     X,
     Divide,
     Database,
-    Settings,
-    Zap,
-    Shield,
-    Clock
+    Settings
 } from 'lucide-react'
 
 interface NodeCategory {

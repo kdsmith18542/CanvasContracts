@@ -1,5 +1,6 @@
 //! Node system for Canvas Contracts
 
+pub mod custom;
 mod definitions;
 mod implementations;
 
@@ -10,7 +11,8 @@ use crate::{
     types::{ExecutionContext, PortId},
 };
 
-pub use definitions::{NodeDefinition, builtin_node_definitions};
+pub use custom::{CustomNodeBuilder, CustomNodeDefinition, CustomNodeRegistry};
+pub use definitions::{builtin_node_definitions, NodeDefinition};
 pub use implementations::{Node, NodeFactory};
 
 /// Node context for execution
@@ -43,7 +45,11 @@ impl NodeContext {
             .map_err(CanvasError::Validation)
     }
 
-    pub fn emit_event(&mut self, name: String, data: std::collections::HashMap<String, serde_json::Value>) {
+    pub fn emit_event(
+        &mut self,
+        name: String,
+        data: std::collections::HashMap<String, serde_json::Value>,
+    ) {
         let event = crate::types::Event {
             name,
             data,
@@ -77,7 +83,11 @@ impl NodeRegistry {
         self.definitions.keys().cloned().collect()
     }
 
-    pub fn create_node(&self, node_type: &str, properties: &HashMap<String, serde_json::Value>) -> CanvasResult<Box<dyn Node>> {
+    pub fn create_node(
+        &self,
+        node_type: &str,
+        properties: &HashMap<String, serde_json::Value>,
+    ) -> CanvasResult<Box<dyn Node>> {
         let _definition = self
             .get_node_definition(node_type)
             .ok_or_else(|| CanvasError::Node(format!("Unknown node type: {}", node_type)))?;
@@ -91,4 +101,4 @@ impl Default for NodeRegistry {
     fn default() -> Self {
         Self::new()
     }
-} 
+}

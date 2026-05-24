@@ -9,7 +9,6 @@ import {
     Upload,
     Download
 } from 'lucide-react'
-import { TauriService } from '../services/tauriService'
 
 interface CustomNodeDefinition {
     id: string

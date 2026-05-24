@@ -1,5 +1,5 @@
 //! Graph Intermediate Representation (IR)
-use crate::types::{VisualGraph, NodeId};
+use crate::types::{NodeId, VisualGraph};
 use petgraph::graph::{DiGraph, NodeIndex};
 use std::collections::HashMap;
 
@@ -44,26 +44,32 @@ impl GraphIR {
 
     pub fn from_visual_graph(graph: &VisualGraph) -> Self {
         let mut ir = GraphIR::new();
-        
+
         // Add nodes to petgraph and IR map
         for node in &graph.nodes {
             let node_idx = ir.graph.add_node(node.id);
             ir.node_map.insert(node.id, node_idx);
-            
-            ir.nodes.insert(node.id, GraphIRNode {
-                id: node.id,
-                node_type: node.node_type.clone(),
-                inputs: node.inputs.iter().map(|p| p.id.clone()).collect(),
-                outputs: node.outputs.iter().map(|p| p.id.clone()).collect(),
-                properties: node.properties.clone(),
-            });
+
+            ir.nodes.insert(
+                node.id,
+                GraphIRNode {
+                    id: node.id,
+                    node_type: node.node_type.clone(),
+                    inputs: node.inputs.iter().map(|p| p.id.clone()).collect(),
+                    outputs: node.outputs.iter().map(|p| p.id.clone()).collect(),
+                    properties: node.properties.clone(),
+                },
+            );
         }
-        
+
         // Add edges to petgraph and IR connections
         for conn in &graph.connections {
-            if let (Some(&src_idx), Some(&tgt_idx)) = (ir.node_map.get(&conn.source_node), ir.node_map.get(&conn.target_node)) {
+            if let (Some(&src_idx), Some(&tgt_idx)) = (
+                ir.node_map.get(&conn.source_node),
+                ir.node_map.get(&conn.target_node),
+            ) {
                 ir.graph.add_edge(src_idx, tgt_idx, ());
-                
+
                 ir.connections.push(GraphIRConnection {
                     id: conn.id,
                     source: conn.source_node,
@@ -73,11 +79,13 @@ impl GraphIR {
                 });
             }
         }
-        
+
         ir
     }
 }
 
 impl Default for GraphIR {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

@@ -1,11 +1,13 @@
 //! Graph execution engine
 use crate::{
     error::{CanvasError, CanvasResult},
-    types::{VisualGraph, ExecutionContext, ExecutionTrace, ExecutionStep, PortId, NodeId, ValueType},
-    nodes::{NodeRegistry, NodeContext},
+    nodes::{NodeContext, NodeRegistry},
+    types::{
+        ExecutionContext, ExecutionStep, ExecutionTrace, NodeId, PortId, ValueType, VisualGraph,
+    },
 };
-use std::collections::HashMap;
 use petgraph::algo::toposort;
+use std::collections::HashMap;
 
 /// Executor for visual graphs
 pub struct GraphExecutor {
@@ -19,9 +21,13 @@ impl GraphExecutor {
     }
 
     /// Execute a visual graph end-to-end
-    pub fn execute(&self, graph: &VisualGraph, mut context: ExecutionContext) -> CanvasResult<(ExecutionTrace, ExecutionContext)> {
+    pub fn execute(
+        &self,
+        graph: &VisualGraph,
+        mut context: ExecutionContext,
+    ) -> CanvasResult<(ExecutionTrace, ExecutionContext)> {
         let ir = crate::compiler::graph_ir::GraphIR::from_visual_graph(graph);
-        
+
         // Topological sort for execution order
         // This ensures data dependencies are met before a node executes.
         let order = toposort(&ir.graph, None)
@@ -36,9 +42,9 @@ impl GraphExecutor {
             let ir_node = ir.nodes.get(&node_id).ok_or_else(|| {
                 CanvasError::ExecutionError(format!("Node not found in IR: {}", node_id))
             })?;
-            
+
             let mut node_ctx = NodeContext::new(context.clone());
-            
+
             // Map inputs from previous node outputs via connections
             let mut has_flow_inputs = false;
             let mut flow_signal_received = false;
@@ -47,7 +53,8 @@ impl GraphExecutor {
             for conn in &ir.connections {
                 if conn.target == node_id {
                     if let Some(v_node) = graph.get_node(node_id) {
-                        if let Some(port) = v_node.inputs.iter().find(|p| p.id == conn.target_port) {
+                        if let Some(port) = v_node.inputs.iter().find(|p| p.id == conn.target_port)
+                        {
                             if port.value_type == ValueType::Flow {
                                 has_flow_inputs = true;
                             }
@@ -60,12 +67,17 @@ impl GraphExecutor {
             for conn in &ir.connections {
                 if conn.target == node_id {
                     if let Some(val) = node_outputs.get(&(conn.source, conn.source_port.clone())) {
-                        node_ctx.inputs.insert(conn.target_port.clone(), val.clone());
-                        
+                        node_ctx
+                            .inputs
+                            .insert(conn.target_port.clone(), val.clone());
+
                         // Check if this is an active flow signal
                         if let Some(v_node) = graph.get_node(node_id) {
-                            if let Some(port) = v_node.inputs.iter().find(|p| p.id == conn.target_port) {
-                                if port.value_type == ValueType::Flow && val.as_bool() == Some(true) {
+                            if let Some(port) =
+                                v_node.inputs.iter().find(|p| p.id == conn.target_port)
+                            {
+                                if port.value_type == ValueType::Flow && val.as_bool() == Some(true)
+                                {
                                     flow_signal_received = true;
                                 }
                             }
@@ -85,13 +97,14 @@ impl GraphExecutor {
             // 1. Start nodes always execute.
             // 2. Nodes without flow inputs (pure data nodes) always execute.
             // 3. Nodes with flow inputs execute only if they receive a 'true' flow signal.
-            let should_execute = ir_node.node_type == "Start" 
-                || !has_flow_inputs 
-                || flow_signal_received;
+            let should_execute =
+                ir_node.node_type == "Start" || !has_flow_inputs || flow_signal_received;
 
             if should_execute {
-                let node_impl = self.registry.create_node(&ir_node.node_type, &ir_node.properties)?;
-                
+                let node_impl = self
+                    .registry
+                    .create_node(&ir_node.node_type, &ir_node.properties)?;
+
                 let start_time = std::time::Instant::now();
                 let result_res = node_impl.execute(&mut node_ctx);
                 let duration = start_time.elapsed().as_millis() as u64;
@@ -128,12 +141,14 @@ impl GraphExecutor {
                             if let Some(v_node) = graph.get_node(node_id) {
                                 for port in &v_node.outputs {
                                     if port.value_type == ValueType::Flow {
-                                        node_outputs.entry((node_id, port.id.clone())).or_insert(serde_json::Value::Bool(true));
+                                        node_outputs
+                                            .entry((node_id, port.id.clone()))
+                                            .or_insert(serde_json::Value::Bool(true));
                                     }
                                 }
                             }
                         }
-                        
+
                         // Update execution context state
                         context = node_ctx.execution_context;
                     }
@@ -158,7 +173,8 @@ impl GraphExecutor {
                 if let Some(v_node) = graph.get_node(node_id) {
                     for port in &v_node.outputs {
                         if port.value_type == ValueType::Flow {
-                            node_outputs.insert((node_id, port.id.clone()), serde_json::Value::Bool(false));
+                            node_outputs
+                                .insert((node_id, port.id.clone()), serde_json::Value::Bool(false));
                         }
                     }
                 }

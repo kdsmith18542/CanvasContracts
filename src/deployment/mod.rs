@@ -1,11 +1,11 @@
 //! Production deployment and scaling system
 
 use crate::{
-    error::CanvasResult,
-    types::{Graph, NodeId},
     config::Config,
-    monitoring::{MetricsCollector, HealthChecker, CircuitBreaker},
+    error::CanvasResult,
+    monitoring::{CircuitBreaker, HealthChecker, MetricsCollector},
     optimization::PerformanceOptimizer,
+    types::{NodeId, VisualGraph},
 };
 
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,7 @@ pub struct DeploymentInfo {
     pub id: String,
     pub name: String,
     pub status: DeploymentStatus,
-    pub graph: Graph,
+    pub graph: VisualGraph,
     pub wasm_bytes: Vec<u8>,
     pub config: DeploymentConfig,
     pub metrics: DeploymentMetrics,
@@ -292,9 +292,14 @@ impl DeploymentManager {
     }
 
     /// Deploy a contract
-    pub async fn deploy(&self, name: &str, graph: &Graph, config: DeploymentConfig) -> CanvasResult<String> {
+    pub async fn deploy(
+        &self,
+        name: &str,
+        graph: &VisualGraph,
+        config: DeploymentConfig,
+    ) -> CanvasResult<String> {
         let deployment_id = self.generate_deployment_id(name);
-        
+
         // Optimize the graph
         let optimization_results = {
             let mut optimizer = self.optimizer.lock().unwrap();
@@ -338,16 +343,16 @@ impl DeploymentManager {
     /// Start deployment process
     async fn start_deployment(&self, deployment_id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(deployment_id) {
             deployment.status = DeploymentStatus::Deploying;
-            
+
             // TODO: Implement actual deployment logic
             // - Provision infrastructure
             // - Deploy containers/pods
             // - Configure load balancers
             // - Set up monitoring
-            
+
             deployment.status = DeploymentStatus::Running;
             deployment.updated_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -361,15 +366,15 @@ impl DeploymentManager {
     /// Scale deployment
     pub async fn scale(&self, deployment_id: &str, replicas: u32) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(deployment_id) {
             deployment.status = DeploymentStatus::Scaling;
             deployment.config.replicas = replicas;
-            
+
             // TODO: Implement actual scaling logic
             // - Scale up/down containers/pods
             // - Update load balancer configuration
-            
+
             deployment.status = DeploymentStatus::Running;
             deployment.updated_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -381,21 +386,21 @@ impl DeploymentManager {
     }
 
     /// Update deployment
-    pub async fn update(&self, deployment_id: &str, graph: &Graph) -> CanvasResult<()> {
+    pub async fn update(&self, deployment_id: &str, graph: &VisualGraph) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(deployment_id) {
             deployment.status = DeploymentStatus::Deploying;
             deployment.graph = graph.clone();
-            
+
             // Recompile with new graph
             deployment.wasm_bytes = self.compile_graph(graph)?;
-            
+
             // TODO: Implement rolling update logic
             // - Deploy new version alongside old version
             // - Gradually shift traffic
             // - Remove old version
-            
+
             deployment.status = DeploymentStatus::Running;
             deployment.updated_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -409,15 +414,15 @@ impl DeploymentManager {
     /// Stop deployment
     pub async fn stop(&self, deployment_id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(deployment_id) {
             deployment.status = DeploymentStatus::Stopped;
-            
+
             // TODO: Implement actual stop logic
             // - Stop containers/pods
             // - Remove from load balancer
             // - Clean up resources
-            
+
             deployment.updated_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -449,16 +454,16 @@ impl DeploymentManager {
     fn generate_deployment_id(&self, name: &str) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         name.hash(&mut hasher);
         std::time::SystemTime::now().hash(&mut hasher);
-        
+
         format!("{}-{:x}", name, hasher.finish())
     }
 
     /// Compile graph to WASM
-    fn compile_graph(&self, graph: &Graph) -> CanvasResult<Vec<u8>> {
+    fn compile_graph(&self, graph: &VisualGraph) -> CanvasResult<Vec<u8>> {
         // TODO: Implement actual compilation
         // For now, return mock WASM bytes
         Ok(vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00])
@@ -489,7 +494,12 @@ impl BlueGreenDeploymentManager {
     }
 
     /// Create blue-green deployment
-    pub async fn create_deployment(&self, id: &str, graph: &Graph, config: DeploymentConfig) -> CanvasResult<()> {
+    pub async fn create_deployment(
+        &self,
+        id: &str,
+        graph: &VisualGraph,
+        config: DeploymentConfig,
+    ) -> CanvasResult<()> {
         let deployment = BlueGreenDeployment {
             id: id.to_string(),
             blue_deployment: None,
@@ -510,9 +520,14 @@ impl BlueGreenDeploymentManager {
     }
 
     /// Deploy to blue environment
-    pub async fn deploy_blue(&self, id: &str, graph: &Graph, config: DeploymentConfig) -> CanvasResult<()> {
+    pub async fn deploy_blue(
+        &self,
+        id: &str,
+        graph: &VisualGraph,
+        config: DeploymentConfig,
+    ) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(id) {
             // TODO: Implement actual blue deployment
             deployment.blue_deployment = Some(DeploymentInfo {
@@ -538,9 +553,14 @@ impl BlueGreenDeploymentManager {
     }
 
     /// Deploy to green environment
-    pub async fn deploy_green(&self, id: &str, graph: &Graph, config: DeploymentConfig) -> CanvasResult<()> {
+    pub async fn deploy_green(
+        &self,
+        id: &str,
+        graph: &VisualGraph,
+        config: DeploymentConfig,
+    ) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(id) {
             // TODO: Implement actual green deployment
             deployment.green_deployment = Some(DeploymentInfo {
@@ -568,11 +588,11 @@ impl BlueGreenDeploymentManager {
     /// Switch traffic to green environment
     pub async fn switch_to_green(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(id) {
             if deployment.green_deployment.is_some() {
                 deployment.active_environment = ActiveEnvironment::Green;
-                
+
                 // TODO: Implement actual traffic switching
                 // - Update load balancer configuration
                 // - Gradually shift traffic
@@ -586,10 +606,10 @@ impl BlueGreenDeploymentManager {
     /// Switch traffic to blue environment
     pub async fn switch_to_blue(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(id) {
             deployment.active_environment = ActiveEnvironment::Blue;
-            
+
             // TODO: Implement actual traffic switching
         }
 
@@ -599,7 +619,7 @@ impl BlueGreenDeploymentManager {
     /// Rollback to previous environment
     pub async fn rollback(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(id) {
             match deployment.active_environment {
                 ActiveEnvironment::Blue => {
@@ -609,7 +629,7 @@ impl BlueGreenDeploymentManager {
                     deployment.active_environment = ActiveEnvironment::Blue;
                 }
             }
-            
+
             // TODO: Implement actual rollback logic
         }
 
@@ -627,7 +647,12 @@ impl CanaryDeploymentManager {
     }
 
     /// Create canary deployment
-    pub async fn create_deployment(&self, id: &str, stable_deployment: DeploymentInfo, config: DeploymentConfig) -> CanvasResult<()> {
+    pub async fn create_deployment(
+        &self,
+        id: &str,
+        stable_deployment: DeploymentInfo,
+        config: DeploymentConfig,
+    ) -> CanvasResult<()> {
         let deployment = CanaryDeployment {
             id: id.to_string(),
             stable_deployment,
@@ -635,7 +660,7 @@ impl CanaryDeploymentManager {
                 id: format!("{}-canary", id),
                 name: format!("{} Canary", id),
                 status: DeploymentStatus::Pending,
-                graph: Graph::new("canary"),
+                graph: VisualGraph::new("canary"),
                 wasm_bytes: vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
                 config,
                 metrics: DeploymentMetrics::default(),
@@ -668,13 +693,18 @@ impl CanaryDeploymentManager {
     }
 
     /// Update traffic split
-    pub async fn update_traffic_split(&self, id: &str, stable_percentage: f64, canary_percentage: f64) -> CanvasResult<()> {
+    pub async fn update_traffic_split(
+        &self,
+        id: &str,
+        stable_percentage: f64,
+        canary_percentage: f64,
+    ) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(id) {
             deployment.traffic_split.stable_percentage = stable_percentage;
             deployment.traffic_split.canary_percentage = canary_percentage;
-            
+
             // TODO: Implement actual traffic splitting
             // - Update load balancer weights
             // - Monitor canary metrics
@@ -686,7 +716,7 @@ impl CanaryDeploymentManager {
     /// Promote canary to stable
     pub async fn promote_canary(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(id) {
             // TODO: Implement actual promotion
             // - Replace stable deployment with canary
@@ -700,7 +730,7 @@ impl CanaryDeploymentManager {
     /// Rollback canary deployment
     pub async fn rollback_canary(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        
+
         if let Some(deployment) = deployments.get_mut(id) {
             // TODO: Implement actual rollback
             // - Set traffic split to 100% stable
@@ -728,9 +758,13 @@ impl InfrastructureManager {
     }
 
     /// Deploy infrastructure
-    pub async fn deploy_infrastructure(&self, template_name: &str, variables: HashMap<String, String>) -> CanvasResult<()> {
+    pub async fn deploy_infrastructure(
+        &self,
+        template_name: &str,
+        variables: HashMap<String, String>,
+    ) -> CanvasResult<()> {
         let templates = self.templates.lock().unwrap();
-        
+
         if let Some(template) = templates.get(template_name) {
             // TODO: Implement actual infrastructure deployment
             // - Generate configuration files
@@ -764,8 +798,8 @@ mod tests {
     async fn test_deployment_manager() {
         let config = Config::default();
         let manager = DeploymentManager::new(&config).unwrap();
-        
-        let graph = Graph::new("test");
+
+        let graph = VisualGraph::new("test");
         let config = DeploymentConfig {
             replicas: 3,
             resources: ResourceRequirements {
@@ -810,10 +844,13 @@ mod tests {
                 },
             },
         };
-        
-        let deployment_id = manager.deploy("test-deployment", &graph, config).await.unwrap();
+
+        let deployment_id = manager
+            .deploy("test-deployment", &graph, config)
+            .await
+            .unwrap();
         assert!(!deployment_id.is_empty());
-        
+
         let status = manager.get_status(&deployment_id);
         assert!(status.is_some());
     }
@@ -822,8 +859,8 @@ mod tests {
     async fn test_blue_green_deployment() {
         let config = Config::default();
         let manager = BlueGreenDeploymentManager::new(&config);
-        
-        let graph = Graph::new("test");
+
+        let graph = VisualGraph::new("test");
         let config = DeploymentConfig {
             replicas: 2,
             resources: ResourceRequirements {
@@ -868,10 +905,19 @@ mod tests {
                 },
             },
         };
-        
-        manager.create_deployment("test-bg", &graph, config.clone()).await.unwrap();
-        manager.deploy_blue("test-bg", &graph, config.clone()).await.unwrap();
-        manager.deploy_green("test-bg", &graph, config).await.unwrap();
+
+        manager
+            .create_deployment("test-bg", &graph, config.clone())
+            .await
+            .unwrap();
+        manager
+            .deploy_blue("test-bg", &graph, config.clone())
+            .await
+            .unwrap();
+        manager
+            .deploy_green("test-bg", &graph, config)
+            .await
+            .unwrap();
         manager.switch_to_green("test-bg").await.unwrap();
     }
 
@@ -879,12 +925,12 @@ mod tests {
     async fn test_canary_deployment() {
         let config = Config::default();
         let manager = CanaryDeploymentManager::new(&config);
-        
+
         let stable_deployment = DeploymentInfo {
             id: "stable".to_string(),
             name: "Stable".to_string(),
             status: DeploymentStatus::Running,
-            graph: Graph::new("stable"),
+            graph: VisualGraph::new("stable"),
             wasm_bytes: vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
             config: DeploymentConfig {
                 replicas: 3,
@@ -940,7 +986,7 @@ mod tests {
                 .unwrap()
                 .as_secs(),
         };
-        
+
         let canary_config = DeploymentConfig {
             replicas: 1,
             resources: ResourceRequirements {
@@ -985,8 +1031,14 @@ mod tests {
                 },
             },
         };
-        
-        manager.create_deployment("test-canary", stable_deployment, canary_config).await.unwrap();
-        manager.update_traffic_split("test-canary", 80.0, 20.0).await.unwrap();
+
+        manager
+            .create_deployment("test-canary", stable_deployment, canary_config)
+            .await
+            .unwrap();
+        manager
+            .update_traffic_split("test-canary", 80.0, 20.0)
+            .await
+            .unwrap();
     }
-} 
+}

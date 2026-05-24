@@ -1,14 +1,6 @@
 import React from 'react'
 import { Settings, X } from 'lucide-react'
 
-interface NodeProperty {
-    name: string
-    type: 'string' | 'number' | 'boolean'
-    description: string
-    required: boolean
-    default?: any
-}
-
 interface PropertyPanelProps {
     node: { id: string; type: string; data: { label: string; properties?: Record<string, any> } } | null
     onClose: () => void

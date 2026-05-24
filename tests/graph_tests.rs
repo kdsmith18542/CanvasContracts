@@ -3,7 +3,7 @@ mod integration_tests {
     use canvas_contracts::{
         compiler::GraphExecutor,
         nodes::NodeRegistry,
-        types::{VisualGraph, ExecutionContext},
+        types::{ExecutionContext, VisualGraph},
     };
 
     fn setup_registry() -> NodeRegistry {
@@ -34,7 +34,10 @@ mod integration_tests {
         assert!(trace.success);
         // Start, Add, End = 3 steps
         assert_eq!(trace.steps.len(), 3);
-        assert!(trace.steps.iter().any(|s| s.outputs.get("result") == Some(&serde_json::json!(30))));
+        assert!(trace
+            .steps
+            .iter()
+            .any(|s| s.outputs.get("result") == Some(&serde_json::json!(30))));
     }
 
     #[test]
@@ -105,7 +108,10 @@ mod integration_tests {
         // Only 2 gas: Add costs 3 — executor returns Ok but trace shows failure
         let ctx = ExecutionContext::new(2);
         let (trace, _) = executor.execute(&graph, ctx).unwrap();
-        assert!(!trace.success, "Trace should indicate failure due to gas exhaustion");
+        assert!(
+            !trace.success,
+            "Trace should indicate failure due to gas exhaustion"
+        );
     }
 
     #[test]
@@ -122,12 +128,18 @@ mod integration_tests {
     #[test]
     fn test_graph_with_only_start() {
         let mut graph = VisualGraph::new("start_only");
-        graph.add_node(canvas_contracts::types::VisualNode::new(
-            uuid::Uuid::new_v4(), "Start",
-            canvas_contracts::types::Position::new(0.0, 0.0)
-        ).with_outputs(vec![canvas_contracts::types::Port::new(
-            "flow_out", "Flow Out", canvas_contracts::types::ValueType::Flow
-        )]));
+        graph.add_node(
+            canvas_contracts::types::VisualNode::new(
+                uuid::Uuid::new_v4(),
+                "Start",
+                canvas_contracts::types::Position::new(0.0, 0.0),
+            )
+            .with_outputs(vec![canvas_contracts::types::Port::new(
+                "flow_out",
+                "Flow Out",
+                canvas_contracts::types::ValueType::Flow,
+            )]),
+        );
 
         let executor = GraphExecutor::new(setup_registry());
         let ctx = ExecutionContext::new(1000);
@@ -140,12 +152,19 @@ mod integration_tests {
     #[test]
     fn test_graph_missing_start_node() {
         let mut graph = VisualGraph::new("no_start");
-        graph.add_node(canvas_contracts::types::VisualNode::new(
-            uuid::Uuid::new_v4(), "End",
-            canvas_contracts::types::Position::new(0.0, 0.0)
-        ).with_inputs(vec![canvas_contracts::types::Port::new(
-            "flow_in", "Flow In", canvas_contracts::types::ValueType::Flow
-        ).required()]));
+        graph.add_node(
+            canvas_contracts::types::VisualNode::new(
+                uuid::Uuid::new_v4(),
+                "End",
+                canvas_contracts::types::Position::new(0.0, 0.0),
+            )
+            .with_inputs(vec![canvas_contracts::types::Port::new(
+                "flow_in",
+                "Flow In",
+                canvas_contracts::types::ValueType::Flow,
+            )
+            .required()]),
+        );
 
         let executor = GraphExecutor::new(setup_registry());
         let ctx = ExecutionContext::new(1000);

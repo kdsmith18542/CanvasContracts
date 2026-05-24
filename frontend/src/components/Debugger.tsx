@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import {
     Play,
-    Pause,
     StepForward,
     CornerDownRight as StepInto,
     CornerUpLeft as StepOut,
@@ -74,23 +73,19 @@ export const Debugger: React.FC = () => {
                 return
             }
 
-            const compileResult = await TauriService.compileContract(graph)
-            if (!compileResult.success) {
-                setError('Debug failed: Compilation error')
-                alert('Cannot start debugging: compilation failed')
-                setIsDebugging(false)
-                return
-            }
-
-            const trace: ExecutionStep[] = graph.nodes.map((node, index) => ({
-                step_number: index,
-                node_id: node.id,
-                node_type: node.data.nodeType || node.type,
+            await TauriService.debugStart(graph)
+            
+            const traceResult = await TauriService.debugGetTrace()
+            const trace: ExecutionStep[] = traceResult.steps.map((step: any, index: number) => ({
+                step_number: step.step_number || index,
+                node_id: step.node_id,
+                node_type: step.node_type,
                 timestamp: Date.now() + index * 10,
-                inputs: {},
-                outputs: {},
-                gas_consumed: Math.floor((compileResult.gas_estimate || 1000) / graph.nodes.length),
-                duration_ms: Math.floor(Math.random() * 50) + 5,
+                inputs: step.inputs || {},
+                outputs: step.outputs || {},
+                gas_consumed: step.gas_consumed || 0,
+                duration_ms: step.duration_ms || 0,
+                error: step.error || undefined,
             }))
 
             setExecutionTrace(trace)
@@ -127,31 +122,53 @@ export const Debugger: React.FC = () => {
     const handleContinue = async () => {
         if (!debugState) return
 
-        setDebugState(prev => prev ? { ...prev, state: 'running', current_step: prev.total_steps - 1 } : null)
-        setTimeout(() => {
-            setDebugState(prev => prev ? { ...prev, state: 'finished' } : null)
-        }, 100)
+        try {
+            await TauriService.debugContinue()
+            const traceResult = await TauriService.debugGetTrace()
+            const trace: ExecutionStep[] = traceResult.steps.map((step: any, index: number) => ({
+                step_number: step.step_number || index,
+                node_id: step.node_id,
+                node_type: step.node_type,
+                timestamp: Date.now() + index * 10,
+                inputs: step.inputs || {},
+                outputs: step.outputs || {},
+                gas_consumed: step.gas_consumed || 0,
+                duration_ms: step.duration_ms || 0,
+                error: step.error || undefined,
+            }))
+            setExecutionTrace(trace)
+            setDebugState(prev => prev ? { ...prev, state: 'finished', current_step: trace.length - 1 } : null)
+        } catch (error) {
+            console.error('Debug continue failed:', error)
+        }
     }
 
     const handleStepNext = async () => {
         if (!debugState) return
 
-        const nextStep = Math.min(debugState.current_step + 1, debugState.total_steps - 1)
-        const isFinished = nextStep >= debugState.total_steps - 1
+        try {
+            await TauriService.debugStep()
+            const traceResult = await TauriService.debugGetTrace()
+            const nextStep = Math.min(debugState.current_step + 1, traceResult.steps.length - 1)
+            const isFinished = nextStep >= traceResult.steps.length - 1
 
-        setDebugState(prev => prev ? {
-            ...prev,
-            state: isFinished ? 'finished' : 'stepping',
-            current_step: nextStep,
-            call_stack: executionTrace[nextStep]
-                ? [{
-                    node_id: executionTrace[nextStep].node_id,
-                    function_name: executionTrace[nextStep].node_type,
-                    variables: {}
-                }]
-                : prev.call_stack
-        } : null)
-        setSelectedStep(nextStep)
+            setDebugState(prev => prev ? {
+                ...prev,
+                state: isFinished ? 'finished' : 'stepping',
+                current_step: nextStep,
+                variables: (traceResult.steps[nextStep] as any)?.outputs || {},
+                call_stack: traceResult.steps[nextStep]
+                    ? [{
+                        node_id: traceResult.steps[nextStep].node_id,
+                        function_name: traceResult.steps[nextStep].node_type,
+                        variables: {}
+                    }]
+                    : prev.call_stack
+            } : null)
+            setSelectedStep(nextStep)
+        } catch (error) {
+            console.error('Debug step failed:', error)
+        }
     }
 
     const handleStepInto = async () => {
@@ -169,6 +186,7 @@ export const Debugger: React.FC = () => {
         setSelectedStep(debugState.total_steps - 1)
     }
 
+    /*
     const handleAddBreakpoint = (nodeId: string) => {
         const newBreakpoint: Breakpoint = {
             node_id: nodeId,
@@ -177,6 +195,7 @@ export const Debugger: React.FC = () => {
         }
         setBreakpoints(prev => [...prev, newBreakpoint])
     }
+    */
 
     const handleRemoveBreakpoint = (nodeId: string) => {
         setBreakpoints(prev => prev.filter(bp => bp.node_id !== nodeId))
@@ -231,10 +250,19 @@ export const Debugger: React.FC = () => {
                     <div className="flex items-center space-x-2">
                         <button
                             onClick={() => setShowVariables(!showVariables)}
-                            className="p-1 text-gray-500 hover:text-gray-700"
+                            className="p-1 text-gray-500 hover:text-gray-700 flex items-center text-xs gap-1"
                             title={showVariables ? "Hide Variables" : "Show Variables"}
                         >
                             {showVariables ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                            Variables
+                        </button>
+                        <button
+                            onClick={() => setShowCallStack(!showCallStack)}
+                            className="p-1 text-gray-500 hover:text-gray-700 flex items-center text-xs gap-1"
+                            title={showCallStack ? "Hide Call Stack" : "Show Call Stack"}
+                        >
+                            {showCallStack ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                            Call Stack
                         </button>
                     </div>
                 </div>

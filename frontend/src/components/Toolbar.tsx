@@ -1,19 +1,45 @@
 import React, { useState } from 'react'
-import { Play, CheckCircle, Upload, Save, Settings, Bug, Plus, Store, Download, Rocket, Activity } from 'lucide-react'
+import {
+    Play,
+    CheckCircle,
+    Upload,
+    Save,
+    Settings,
+    Bug,
+    Plus,
+    Store,
+    Download,
+    Rocket,
+    Activity,
+    History,
+    ShieldCheck,
+    FileDown,
+    Brain
+} from 'lucide-react'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { TauriService, DeployResult } from '../services/tauriService'
 
 interface ToolbarProps {
-    onDebugToggle: () => void
-    onCustomNodeToggle: () => void
+    activeSidebar: 'none' | 'ai' | 'debugger' | 'monitor' | 'history' | 'proofs' | 'audit'
+    onSidebarToggle: (sidebar: 'none' | 'ai' | 'debugger' | 'monitor' | 'history' | 'proofs' | 'audit') => void
+    showMarketplace: boolean
     onMarketplaceToggle: () => void
-    onMonitorToggle: () => void
+    onCustomNodeToggle: () => void
     onSave: () => void
     onLoad: () => void
     onDeploy: (result: DeployResult) => void
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ onDebugToggle, onCustomNodeToggle, onMarketplaceToggle, onMonitorToggle, onSave, onLoad, onDeploy }) => {
+export const Toolbar: React.FC<ToolbarProps> = ({
+    activeSidebar,
+    onSidebarToggle,
+    showMarketplace,
+    onMarketplaceToggle,
+    onCustomNodeToggle,
+    onSave,
+    onLoad,
+    onDeploy
+}) => {
     const { graph, setCompilationResult, setValidationResult, setLoading, isLoading, setError, compilationResult } = useCanvasStore()
     const [isCompiling, setIsCompiling] = useState(false)
     const [isValidating, setIsValidating] = useState(false)
@@ -99,9 +125,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onDebugToggle, onCustomNodeTog
             if (!result.success) {
                 throw new Error(result.error || 'Compilation failed')
             }
-            const wasmBytes = (result as any).wasm_bytes
-            if (!wasmBytes || !Array.isArray(wasmBytes)) {
+            const wasmHex = result.wasm_bytes
+            if (!wasmHex || typeof wasmHex !== 'string') {
                 throw new Error('No WASM bytes in compilation result - compile first')
+            }
+            // Convert hex string to byte array
+            const wasmBytes = new Array(0)
+            for (let i = 0; i < wasmHex.length; i += 2) {
+                wasmBytes.push(parseInt(wasmHex.substring(i, i + 2), 16))
             }
             const deployResult = await TauriService.deployContract(wasmBytes, privateKey)
             if (deployResult.success) {
@@ -137,7 +168,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onDebugToggle, onCustomNodeTog
             <div className="flex items-center space-x-2">
                 <button
                     onClick={onMarketplaceToggle}
-                    className="flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    className={`flex items-center px-3 py-1.5 text-sm font-medium rounded-md border transition-colors duration-150 ${
+                        showMarketplace
+                            ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100/75'
+                            : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
                 >
                     <Store className="w-4 h-4 mr-1" />
                     Marketplace
@@ -152,19 +187,75 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onDebugToggle, onCustomNodeTog
                 </button>
 
                 <button
-                    onClick={onDebugToggle}
-                    className="flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    onClick={() => onSidebarToggle(activeSidebar === 'ai' ? 'none' : 'ai')}
+                    className={`flex items-center px-3 py-1.5 text-sm font-medium rounded-md border transition-colors duration-150 ${
+                        activeSidebar === 'ai'
+                            ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100/75'
+                            : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
+                >
+                    <Brain className="w-4 h-4 mr-1" />
+                    AI Assistant
+                </button>
+
+                <button
+                    onClick={() => onSidebarToggle(activeSidebar === 'debugger' ? 'none' : 'debugger')}
+                    className={`flex items-center px-3 py-1.5 text-sm font-medium rounded-md border transition-colors duration-150 ${
+                        activeSidebar === 'debugger'
+                            ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100/75'
+                            : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
                 >
                     <Bug className="w-4 h-4 mr-1" />
                     Debug
                 </button>
 
                 <button
-                    onClick={onMonitorToggle}
-                    className="flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                    onClick={() => onSidebarToggle(activeSidebar === 'monitor' ? 'none' : 'monitor')}
+                    className={`flex items-center px-3 py-1.5 text-sm font-medium rounded-md border transition-colors duration-150 ${
+                        activeSidebar === 'monitor'
+                            ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100/75'
+                            : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
                 >
                     <Activity className="w-4 h-4 mr-1" />
                     Monitor
+                </button>
+
+                <button
+                    onClick={() => onSidebarToggle(activeSidebar === 'history' ? 'none' : 'history')}
+                    className={`flex items-center px-3 py-1.5 text-sm font-medium rounded-md border transition-colors duration-150 ${
+                        activeSidebar === 'history'
+                            ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100/75'
+                            : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
+                >
+                    <History className="w-4 h-4 mr-1" />
+                    History
+                </button>
+
+                <button
+                    onClick={() => onSidebarToggle(activeSidebar === 'proofs' ? 'none' : 'proofs')}
+                    className={`flex items-center px-3 py-1.5 text-sm font-medium rounded-md border transition-colors duration-150 ${
+                        activeSidebar === 'proofs'
+                            ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100/75'
+                            : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
+                >
+                    <ShieldCheck className="w-4 h-4 mr-1" />
+                    Proofs
+                </button>
+
+                <button
+                    onClick={() => onSidebarToggle(activeSidebar === 'audit' ? 'none' : 'audit')}
+                    className={`flex items-center px-3 py-1.5 text-sm font-medium rounded-md border transition-colors duration-150 ${
+                        activeSidebar === 'audit'
+                            ? 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100/75'
+                            : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
+                    }`}
+                >
+                    <FileDown className="w-4 h-4 mr-1" />
+                    Audit
                 </button>
 
                 <button

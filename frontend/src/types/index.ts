@@ -6,6 +6,7 @@ export interface VisualNode {
         label: string
         nodeType?: string
         properties?: Record<string, any>
+        gasVisualizerActive?: boolean
     }
 }
 
@@ -18,8 +19,12 @@ export interface VisualEdge {
 }
 
 export interface VisualGraph {
+    id?: string
+    name: string
+    description?: string
     nodes: VisualNode[]
     edges: VisualEdge[]
+    metadata?: Record<string, string>
 }
 
 export interface NodeDefinition {
@@ -40,6 +45,7 @@ export interface PortInfo {
 export interface CompilationResult {
     success: boolean
     wasm_size?: number
+    wasm_bytes?: string
     gas_estimate?: number
     error?: string | null
 }
@@ -48,4 +54,15 @@ export interface ValidationResult {
     is_valid: boolean
     errors: string[]
     warnings: string[]
+}
+
+export interface ExecutionStep {
+    step_number: number
+    node_id: string
+    node_type: string
+    inputs: Record<string, any>
+    outputs: Record<string, any>
+    gas_consumed: number
+    duration_ms: number
+    error?: string | null
 }

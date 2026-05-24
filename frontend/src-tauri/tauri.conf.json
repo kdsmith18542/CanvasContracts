@@ -16,6 +16,46 @@
             "shell": {
                 "all": false,
                 "open": true
+            },
+            "dialog": {
+                "all": true,
+                "ask": true,
+                "confirm": true,
+                "message": true,
+                "open": true,
+                "save": true
+            },
+            "fs": {
+                "all": true,
+                "readFile": true,
+                "writeFile": true,
+                "readDir": true,
+                "copyFile": true,
+                "createDir": true,
+                "removeDir": true,
+                "removeFile": true,
+                "renameFile": true,
+                "exists": true,
+                "scope": ["**"]
+            },
+            "path": {
+                "all": true
+            },
+            "http": {
+                "all": true,
+                "request": true
+            },
+            "process": {
+                "all": false
+            },
+            "clipboard": {
+                "all": false
+            },
+            "notification": {
+                "all": false
+            },
+            "os": {
+                "all": false
             }
         },
         "bundle": {

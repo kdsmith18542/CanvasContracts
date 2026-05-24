@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { CanvasEditor } from './components/CanvasEditor'
 import { NodePalette } from './components/NodePalette'
 import { Toolbar } from './components/Toolbar'
@@ -8,16 +8,18 @@ import { CustomNodeCreator } from './components/CustomNodeCreator'
 import { Marketplace } from './components/Marketplace'
 import { PropertyPanel } from './components/PropertyPanel'
 import { ContractMonitor, DeployedContract } from './components/ContractMonitor'
+import { ContractHistory } from './components/ContractHistory'
+import { ProofExplorer } from './components/ProofExplorer'
+import { AuditExport } from './components/AuditExport'
 import { useCanvasStore } from './store/useCanvasStore'
 import { ProjectService } from './services/projectService'
 import { DeployResult } from './services/tauriService'
 import { VisualNode } from './types'
 
 function App() {
-    const [showDebugger, setShowDebugger] = useState(false)
+    const [activeSidebar, setActiveSidebar] = useState<'none' | 'ai' | 'debugger' | 'monitor' | 'history' | 'proofs' | 'audit'>('ai')
     const [showCustomNodeCreator, setShowCustomNodeCreator] = useState(false)
     const [showMarketplace, setShowMarketplace] = useState(false)
-    const [showContractMonitor, setShowContractMonitor] = useState(false)
     const [deployedContracts, setDeployedContracts] = useState<DeployedContract[]>([])
     const [selectedNode, setSelectedNode] = useState<{ id: string; type: string; data: { label: string; properties?: Record<string, any> } } | null>(null)
     const { graph, updateGraph, undo, redo } = useCanvasStore()
@@ -96,36 +98,64 @@ function App() {
         return () => document.removeEventListener('keydown', handleKeyDown)
     }, [undo, redo])
 
+    const latestContractAddress = deployedContracts.length > 0
+        ? deployedContracts[deployedContracts.length - 1].address
+        : null
+
     return (
         <div className="h-screen flex flex-col bg-gray-50">
             <Toolbar
-                onDebugToggle={() => setShowDebugger(!showDebugger)}
+                activeSidebar={activeSidebar}
+                onSidebarToggle={(sidebar) => {
+                    setActiveSidebar(sidebar)
+                    if (sidebar !== 'none') {
+                        setShowMarketplace(false)
+                    }
+                }}
+                showMarketplace={showMarketplace}
+                onMarketplaceToggle={() => {
+                    const next = !showMarketplace
+                    setShowMarketplace(next)
+                    if (next) {
+                        setActiveSidebar('none')
+                    }
+                }}
                 onCustomNodeToggle={() => setShowCustomNodeCreator(!showCustomNodeCreator)}
-                onMarketplaceToggle={() => setShowMarketplace(!showMarketplace)}
-                onMonitorToggle={() => setShowContractMonitor(!showContractMonitor)}
                 onSave={handleSave}
                 onLoad={handleLoad}
                 onDeploy={handleDeploy}
             />
-            <div className="flex-1 flex">
-                <NodePalette />
-                <CanvasEditor onNodeSelect={handleNodeSelect} />
-                <AiAssistant />
-                {selectedNode && (
-                    <PropertyPanel
-                        node={selectedNode}
-                        onClose={() => setSelectedNode(null)}
-                        onPropertyChange={handlePropertyChange}
-                    />
-                )}
-                {showDebugger && <Debugger />}
-                {showMarketplace && <Marketplace />}
-                {showContractMonitor && (
-                    <ContractMonitor
-                        contracts={deployedContracts}
-                        onRefresh={handleContractRefresh}
-                        onClose={() => setShowContractMonitor(false)}
-                    />
+            <div className="flex-1 flex overflow-hidden">
+                {showMarketplace ? (
+                    <Marketplace />
+                ) : (
+                    <>
+                        <NodePalette />
+                        <CanvasEditor onNodeSelect={handleNodeSelect} />
+                        
+                        {selectedNode && (
+                            <PropertyPanel
+                                node={selectedNode}
+                                onClose={() => setSelectedNode(null)}
+                                onPropertyChange={handlePropertyChange}
+                            />
+                        )}
+
+                        {activeSidebar === 'ai' && <AiAssistant />}
+                        {activeSidebar === 'debugger' && <Debugger />}
+                        {activeSidebar === 'monitor' && (
+                            <ContractMonitor
+                                contracts={deployedContracts}
+                                onRefresh={handleContractRefresh}
+                                onClose={() => setActiveSidebar('none')}
+                            />
+                        )}
+                        {activeSidebar === 'history' && (
+                            <ContractHistory contractAddress={latestContractAddress} />
+                        )}
+                        {activeSidebar === 'proofs' && <ProofExplorer />}
+                        {activeSidebar === 'audit' && <AuditExport graph={graph} />}
+                    </>
                 )}
             </div>
             {showCustomNodeCreator && <CustomNodeCreator />}

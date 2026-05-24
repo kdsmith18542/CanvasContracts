@@ -65,6 +65,9 @@ pub enum CanvasError {
     #[error("Execution error: {0}")]
     ExecutionError(String),
 
+    #[error("Internal error: {0}")]
+    Internal(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
@@ -184,9 +187,7 @@ impl<T> ErrorContextExt for Result<T, CanvasError> {
                 CanvasError::Type(msg) => {
                     CanvasError::Type(format!("{}: {}", context.operation, msg))
                 }
-                CanvasError::GasLimitExceeded(limit) => {
-                    CanvasError::GasLimitExceeded(limit)
-                }
+                CanvasError::GasLimitExceeded(limit) => CanvasError::GasLimitExceeded(limit),
                 CanvasError::PermissionDenied(msg) => {
                     CanvasError::PermissionDenied(format!("{}: {}", context.operation, msg))
                 }
@@ -213,6 +214,9 @@ impl<T> ErrorContextExt for Result<T, CanvasError> {
                 }
                 CanvasError::ExecutionError(msg) => {
                     CanvasError::ExecutionError(format!("{}: {}", context.operation, msg))
+                }
+                CanvasError::Internal(msg) => {
+                    CanvasError::Internal(format!("{}: {}", context.operation, msg))
                 }
                 CanvasError::Io(e) => CanvasError::Io(e),
                 CanvasError::Serialization(e) => CanvasError::Serialization(e),
@@ -253,4 +257,4 @@ mod tests {
         let recoverable_error = CanvasError::validation("recoverable");
         assert!(recoverable_error.is_recoverable());
     }
-} 
+}

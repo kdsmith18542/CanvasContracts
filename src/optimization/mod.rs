@@ -1,9 +1,9 @@
 //! Performance optimization and production scaling
 
 use crate::{
-    error::CanvasResult,
-    types::{Graph, NodeId, NodeType},
     config::Config,
+    error::CanvasResult,
+    types::{Connection, NodeId, VisualGraph, VisualNode},
 };
 
 use serde::{Deserialize, Serialize};
@@ -19,8 +19,8 @@ pub struct PerformanceOptimizer {
 /// Optimization pass trait
 pub trait OptimizationPass: Send + Sync {
     fn name(&self) -> &str;
-    fn optimize(&self, graph: &Graph) -> CanvasResult<OptimizationResult>;
-    fn is_applicable(&self, graph: &Graph) -> bool;
+    fn optimize(&self, graph: &VisualGraph) -> CanvasResult<OptimizationResult>;
+    fn is_applicable(&self, graph: &VisualGraph) -> bool;
 }
 
 /// Optimization result
@@ -218,7 +218,7 @@ impl PerformanceOptimizer {
     }
 
     /// Optimize a graph
-    pub fn optimize(&mut self, graph: &Graph) -> CanvasResult<Vec<OptimizationResult>> {
+    pub fn optimize(&mut self, graph: &VisualGraph) -> CanvasResult<Vec<OptimizationResult>> {
         let mut results = Vec::new();
         let graph_hash = self.compute_graph_hash(graph);
 
@@ -266,13 +266,17 @@ impl PerformanceOptimizer {
     }
 
     /// Compute graph hash for caching
-    fn compute_graph_hash(&self, graph: &Graph) -> String {
+    fn compute_graph_hash(&self, graph: &VisualGraph) -> String {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
 
         let mut hasher = DefaultHasher::new();
-        graph.get_nodes().hash(&mut hasher);
-        graph.get_edges().hash(&mut hasher);
+        for node in graph.get_nodes() {
+            node.id.hash(&mut hasher);
+        }
+        for conn in graph.get_connections() {
+            conn.id.hash(&mut hasher);
+        }
         format!("{:x}", hasher.finish())
     }
 
@@ -297,16 +301,16 @@ impl OptimizationPass for DeadCodeEliminationPass {
         "dead_code_elimination"
     }
 
-    fn optimize(&self, graph: &Graph) -> CanvasResult<OptimizationResult> {
+    fn optimize(&self, graph: &VisualGraph) -> CanvasResult<OptimizationResult> {
         let nodes = graph.get_nodes();
-        let edges = graph.get_edges();
-        
+        let edges = graph.get_connections();
+
         let mut reachable_nodes = std::collections::HashSet::new();
         let mut to_visit = Vec::new();
 
         // Find start nodes
         for node in nodes {
-            if node.node_type == NodeType::Start {
+            if node.node_type == "Start" {
                 to_visit.push(node.id.clone());
                 reachable_nodes.insert(node.id.clone());
             }
@@ -315,9 +319,9 @@ impl OptimizationPass for DeadCodeEliminationPass {
         // BFS to find reachable nodes
         while let Some(node_id) = to_visit.pop() {
             for edge in edges {
-                if edge.source == node_id && !reachable_nodes.contains(&edge.target) {
-                    reachable_nodes.insert(edge.target.clone());
-                    to_visit.push(edge.target.clone());
+                if edge.source_node == node_id && !reachable_nodes.contains(&edge.target_node) {
+                    reachable_nodes.insert(edge.target_node.clone());
+                    to_visit.push(edge.target_node.clone());
                 }
             }
         }
@@ -345,10 +349,10 @@ impl OptimizationPass for DeadCodeEliminationPass {
 
         Ok(OptimizationResult {
             name: "Dead Code Elimination".to_string(),
-            original_gas: 0, // Will be calculated by caller
+            original_gas: 0,  // Will be calculated by caller
             optimized_gas: 0, // Will be calculated by caller
             gas_savings,
-            original_size: 0, // Will be calculated by caller
+            original_size: 0,  // Will be calculated by caller
             optimized_size: 0, // Will be calculated by caller
             size_savings,
             changes,
@@ -356,7 +360,7 @@ impl OptimizationPass for DeadCodeEliminationPass {
         })
     }
 
-    fn is_applicable(&self, graph: &Graph) -> bool {
+    fn is_applicable(&self, graph: &VisualGraph) -> bool {
         // Always applicable
         true
     }
@@ -367,16 +371,16 @@ impl OptimizationPass for ConstantFoldingPass {
         "constant_folding"
     }
 
-    fn optimize(&self, graph: &Graph) -> CanvasResult<OptimizationResult> {
+    fn optimize(&self, graph: &VisualGraph) -> CanvasResult<OptimizationResult> {
         let nodes = graph.get_nodes();
         let mut changes = Vec::new();
         let mut folded_nodes = Vec::new();
 
         // Find nodes with constant inputs that can be folded
         for node in nodes {
-            if node.node_type == NodeType::Arithmetic {
+            if node.node_type == "Arithmetic" {
                 // Check if all inputs are constants
-                let inputs = graph.get_node_inputs(&node.id)?;
+                let inputs: HashMap<String, serde_json::Value> = node.properties.clone();
                 if inputs.iter().all(|(_, value)| value.is_number()) {
                     folded_nodes.push(node.id.clone());
                 }
@@ -408,9 +412,12 @@ impl OptimizationPass for ConstantFoldingPass {
         })
     }
 
-    fn is_applicable(&self, graph: &Graph) -> bool {
+    fn is_applicable(&self, graph: &VisualGraph) -> bool {
         // Check if there are arithmetic nodes
-        graph.get_nodes().iter().any(|n| n.node_type == NodeType::Arithmetic)
+        graph
+            .get_nodes()
+            .iter()
+            .any(|n| n.node_type == "Arithmetic")
     }
 }
 
@@ -419,15 +426,15 @@ impl OptimizationPass for LoopOptimizationPass {
         "loop_optimization"
     }
 
-    fn optimize(&self, graph: &Graph) -> CanvasResult<OptimizationResult> {
+    fn optimize(&self, graph: &VisualGraph) -> CanvasResult<OptimizationResult> {
         let nodes = graph.get_nodes();
-        let edges = graph.get_edges();
+        let edges = graph.get_connections();
         let mut changes = Vec::new();
         let mut optimized_loops = Vec::new();
 
         // Find loops in the graph
         let loops = self.find_loops(nodes, edges)?;
-        
+
         for loop_nodes in loops {
             // Check if loop can be optimized
             if self.can_optimize_loop(&loop_nodes, graph)? {
@@ -460,22 +467,28 @@ impl OptimizationPass for LoopOptimizationPass {
         })
     }
 
-    fn is_applicable(&self, graph: &Graph) -> bool {
+    fn is_applicable(&self, graph: &VisualGraph) -> bool {
         // Check if there are control flow nodes that might form loops
-        let control_nodes = graph.get_nodes().iter()
-            .filter(|n| n.node_type == NodeType::Control)
+        let control_nodes = graph
+            .get_nodes()
+            .iter()
+            .filter(|n| n.node_type == "Control")
             .count();
         control_nodes > 2
     }
 }
 
 impl LoopOptimizationPass {
-    fn find_loops(&self, nodes: &[crate::types::Node], edges: &[crate::types::Edge]) -> CanvasResult<Vec<Vec<NodeId>>> {
+    fn find_loops(
+        &self,
+        nodes: &[VisualNode],
+        edges: &[Connection],
+    ) -> CanvasResult<Vec<Vec<NodeId>>> {
         // TODO: Implement actual loop detection using DFS
         Ok(Vec::new())
     }
 
-    fn can_optimize_loop(&self, loop_nodes: &[NodeId], graph: &Graph) -> CanvasResult<bool> {
+    fn can_optimize_loop(&self, loop_nodes: &[NodeId], graph: &VisualGraph) -> CanvasResult<bool> {
         // TODO: Implement loop optimization analysis
         Ok(false)
     }
@@ -486,14 +499,14 @@ impl OptimizationPass for MemoryOptimizationPass {
         "memory_optimization"
     }
 
-    fn optimize(&self, graph: &Graph) -> CanvasResult<OptimizationResult> {
+    fn optimize(&self, graph: &VisualGraph) -> CanvasResult<OptimizationResult> {
         let nodes = graph.get_nodes();
         let mut changes = Vec::new();
         let mut memory_optimized_nodes = Vec::new();
 
         // Find memory-intensive operations
         for node in nodes {
-            if node.node_type == NodeType::State {
+            if node.node_type == "State" {
                 // Storage operations are memory-intensive
                 memory_optimized_nodes.push(node.id.clone());
             }
@@ -505,7 +518,10 @@ impl OptimizationPass for MemoryOptimizationPass {
         if !memory_optimized_nodes.is_empty() {
             changes.push(OptimizationChange {
                 change_type: ChangeType::MemoryOptimization,
-                description: format!("Optimize {} memory operations", memory_optimized_nodes.len()),
+                description: format!(
+                    "Optimize {} memory operations",
+                    memory_optimized_nodes.len()
+                ),
                 nodes_affected: memory_optimized_nodes,
                 impact: OptimizationImpact::High,
             });
@@ -524,9 +540,9 @@ impl OptimizationPass for MemoryOptimizationPass {
         })
     }
 
-    fn is_applicable(&self, graph: &Graph) -> bool {
+    fn is_applicable(&self, graph: &VisualGraph) -> bool {
         // Check if there are state operations
-        graph.get_nodes().iter().any(|n| n.node_type == NodeType::State)
+        graph.get_nodes().iter().any(|n| n.node_type == "State")
     }
 }
 
@@ -535,22 +551,23 @@ impl OptimizationPass for CacheOptimizationPass {
         "cache_optimization"
     }
 
-    fn optimize(&self, graph: &Graph) -> CanvasResult<OptimizationResult> {
+    fn optimize(&self, graph: &VisualGraph) -> CanvasResult<OptimizationResult> {
         let nodes = graph.get_nodes();
         let mut changes = Vec::new();
         let mut cache_optimized_nodes = Vec::new();
 
         // Find repeated operations that can be cached
-        let mut operation_counts = HashMap::new();
+        let mut operation_counts: HashMap<String, Vec<NodeId>> = HashMap::new();
         for node in nodes {
-            let key = format!("{:?}", node.node_type);
-            *operation_counts.entry(key).or_insert(0) += 1;
+            operation_counts
+                .entry(node.node_type.clone())
+                .or_default()
+                .push(node.id);
         }
 
-        for (operation, count) in operation_counts {
-            if count > 1 {
-                // This operation is repeated and can be cached
-                cache_optimized_nodes.push(operation);
+        for (_operation, node_ids) in &operation_counts {
+            if node_ids.len() > 1 {
+                cache_optimized_nodes.extend(node_ids.iter().cloned());
             }
         }
 
@@ -579,12 +596,11 @@ impl OptimizationPass for CacheOptimizationPass {
         })
     }
 
-    fn is_applicable(&self, graph: &Graph) -> bool {
+    fn is_applicable(&self, graph: &VisualGraph) -> bool {
         // Check if there are repeated operations
-        let mut operation_counts = HashMap::new();
+        let mut operation_counts: HashMap<String, usize> = HashMap::new();
         for node in graph.get_nodes() {
-            let key = format!("{:?}", node.node_type);
-            *operation_counts.entry(key).or_insert(0) += 1;
+            *operation_counts.entry(node.node_type.clone()).or_insert(0) += 1;
         }
         operation_counts.values().any(|&count| count > 1)
     }
@@ -599,21 +615,22 @@ impl ParallelExecutionOptimizer {
     }
 
     /// Generate parallel execution plan
-    pub fn generate_plan(&self, graph: &Graph) -> CanvasResult<ParallelExecutionPlan> {
+    pub fn generate_plan(&self, graph: &VisualGraph) -> CanvasResult<ParallelExecutionPlan> {
         let nodes = graph.get_nodes();
-        let edges = graph.get_edges();
-        
+        let edges = graph.get_connections();
+
         // Build dependency graph
         let mut dependencies = HashMap::new();
         for edge in edges {
-            dependencies.entry(edge.target.clone())
+            dependencies
+                .entry(edge.target_node.clone())
                 .or_insert_with(Vec::new)
-                .push(edge.source.clone());
+                .push(edge.source_node.clone());
         }
 
         // Topological sort to find execution stages
         let stages = self.topological_sort(nodes, &dependencies)?;
-        
+
         // Calculate parallelism metrics
         let estimated_parallelism = self.calculate_parallelism(&stages);
         let estimated_speedup = self.calculate_speedup(&stages);
@@ -627,10 +644,14 @@ impl ParallelExecutionOptimizer {
     }
 
     /// Perform topological sort
-    fn topological_sort(&self, nodes: &[crate::types::Node], dependencies: &HashMap<NodeId, Vec<NodeId>>) -> CanvasResult<Vec<ExecutionStage>> {
+    fn topological_sort(
+        &self,
+        nodes: &[VisualNode],
+        dependencies: &HashMap<NodeId, Vec<NodeId>>,
+    ) -> CanvasResult<Vec<ExecutionStage>> {
         // TODO: Implement actual topological sort
         let mut stages = Vec::new();
-        
+
         // Simple stage assignment for now
         let mut stage_id = 0;
         for node in nodes {
@@ -654,7 +675,7 @@ impl ParallelExecutionOptimizer {
 
         let max_parallel_stages = stages.len() as f64;
         let total_stages = stages.len() as f64;
-        
+
         max_parallel_stages / total_stages
     }
 
@@ -665,8 +686,12 @@ impl ParallelExecutionOptimizer {
         }
 
         let sequential_time: u64 = stages.iter().map(|s| s.estimated_duration).sum();
-        let parallel_time = stages.iter().map(|s| s.estimated_duration).max().unwrap_or(0);
-        
+        let parallel_time = stages
+            .iter()
+            .map(|s| s.estimated_duration)
+            .max()
+            .unwrap_or(0);
+
         if parallel_time == 0 {
             return 1.0;
         }
@@ -684,12 +709,18 @@ impl ResourceUsageAnalyzer {
     }
 
     /// Analyze resource usage
-    pub fn analyze(&self, graph: &Graph) -> CanvasResult<ResourceUsageReport> {
+    pub fn analyze(&self, graph: &VisualGraph) -> CanvasResult<ResourceUsageReport> {
         let memory_usage = self.analyze_memory_usage(graph)?;
         let cpu_usage = self.analyze_cpu_usage(graph)?;
         let gas_usage = self.analyze_gas_usage(graph)?;
         let network_usage = self.analyze_network_usage(graph)?;
-        let recommendations = self.generate_recommendations(graph, &memory_usage, &cpu_usage, &gas_usage, &network_usage)?;
+        let recommendations = self.generate_recommendations(
+            graph,
+            &memory_usage,
+            &cpu_usage,
+            &gas_usage,
+            &network_usage,
+        )?;
 
         Ok(ResourceUsageReport {
             memory_usage,
@@ -701,7 +732,7 @@ impl ResourceUsageAnalyzer {
     }
 
     /// Analyze memory usage
-    fn analyze_memory_usage(&self, graph: &Graph) -> CanvasResult<MemoryUsage> {
+    fn analyze_memory_usage(&self, graph: &VisualGraph) -> CanvasResult<MemoryUsage> {
         let nodes = graph.get_nodes();
         let mut peak_memory = 0u64;
         let mut total_memory = 0u64;
@@ -714,8 +745,11 @@ impl ResourceUsageAnalyzer {
             total_memory += node_memory;
 
             // Check for potential memory leaks
-            if node.node_type == NodeType::State {
-                memory_leaks.push(format!("Storage operation in node {} may cause memory growth", node.id));
+            if node.node_type == "State" {
+                memory_leaks.push(format!(
+                    "Storage operation in node {} may cause memory growth",
+                    node.id
+                ));
             }
         }
 
@@ -727,7 +761,8 @@ impl ResourceUsageAnalyzer {
 
         // Generate optimization suggestions
         if peak_memory > 1_000_000 {
-            optimization_suggestions.push("Consider reducing memory usage in state operations".to_string());
+            optimization_suggestions
+                .push("Consider reducing memory usage in state operations".to_string());
         }
 
         if memory_leaks.len() > 5 {
@@ -743,10 +778,10 @@ impl ResourceUsageAnalyzer {
     }
 
     /// Analyze CPU usage
-    fn analyze_cpu_usage(&self, graph: &Graph) -> CanvasResult<CpuUsage> {
+    fn analyze_cpu_usage(&self, graph: &VisualGraph) -> CanvasResult<CpuUsage> {
         let nodes = graph.get_nodes();
-        let mut peak_cpu = 0.0;
-        let mut total_cpu = 0.0;
+        let mut peak_cpu = 0.0f64;
+        let mut total_cpu = 0.0f64;
         let mut cpu_intensive_operations = Vec::new();
 
         for node in nodes {
@@ -755,7 +790,10 @@ impl ResourceUsageAnalyzer {
             total_cpu += node_cpu;
 
             if node_cpu > 0.8 {
-                cpu_intensive_operations.push(format!("High CPU usage in node {} ({:.2})", node.id, node_cpu));
+                cpu_intensive_operations.push(format!(
+                    "High CPU usage in node {} ({:.2})",
+                    node.id, node_cpu
+                ));
             }
         }
 
@@ -780,7 +818,7 @@ impl ResourceUsageAnalyzer {
     }
 
     /// Analyze gas usage
-    fn analyze_gas_usage(&self, graph: &Graph) -> CanvasResult<GasUsage> {
+    fn analyze_gas_usage(&self, graph: &VisualGraph) -> CanvasResult<GasUsage> {
         let nodes = graph.get_nodes();
         let mut total_gas = 0u64;
         let mut gas_per_operation = HashMap::new();
@@ -789,12 +827,15 @@ impl ResourceUsageAnalyzer {
         for node in nodes {
             let node_gas = self.estimate_node_gas_usage(node);
             total_gas += node_gas;
-            
+
             let operation_type = format!("{:?}", node.node_type);
             gas_per_operation.insert(operation_type.clone(), node_gas);
 
             if node_gas > 1000 {
-                expensive_operations.push(format!("Expensive operation in node {}: {} gas", node.id, node_gas));
+                expensive_operations.push(format!(
+                    "Expensive operation in node {}: {} gas",
+                    node.id, node_gas
+                ));
             }
         }
 
@@ -813,13 +854,13 @@ impl ResourceUsageAnalyzer {
     }
 
     /// Analyze network usage
-    fn analyze_network_usage(&self, graph: &Graph) -> CanvasResult<NetworkUsage> {
+    fn analyze_network_usage(&self, graph: &VisualGraph) -> CanvasResult<NetworkUsage> {
         let nodes = graph.get_nodes();
         let mut total_bandwidth = 0u64;
         let mut requests_per_second = 0.0;
 
         for node in nodes {
-            if node.node_type == NodeType::External {
+            if node.node_type == "External" {
                 total_bandwidth += 1024; // Estimate 1KB per external call
                 requests_per_second += 0.1; // Estimate 0.1 requests per second
             }
@@ -843,7 +884,7 @@ impl ResourceUsageAnalyzer {
     /// Generate recommendations
     fn generate_recommendations(
         &self,
-        graph: &Graph,
+        graph: &VisualGraph,
         memory_usage: &MemoryUsage,
         cpu_usage: &CpuUsage,
         gas_usage: &GasUsage,
@@ -899,41 +940,44 @@ impl ResourceUsageAnalyzer {
     }
 
     /// Estimate node memory usage
-    fn estimate_node_memory_usage(&self, node: &crate::types::Node) -> u64 {
-        match node.node_type {
-            NodeType::State => 1024, // Storage operations use more memory
-            NodeType::External => 512, // External calls use moderate memory
-            NodeType::Arithmetic => 64, // Arithmetic operations use little memory
-            NodeType::Logic => 32, // Logic operations use very little memory
-            NodeType::Control => 128, // Control flow uses some memory
-            NodeType::Start => 256, // Start nodes use moderate memory
-            NodeType::End => 256, // End nodes use moderate memory
+    fn estimate_node_memory_usage(&self, node: &VisualNode) -> u64 {
+        match node.node_type.as_str() {
+            "State" => 1024,    // Storage operations use more memory
+            "External" => 512,  // External calls use moderate memory
+            "Arithmetic" => 64, // Arithmetic operations use little memory
+            "Logic" => 32,      // Logic operations use very little memory
+            "Control" => 128,   // Control flow uses some memory
+            "Start" => 256,     // Start nodes use moderate memory
+            "End" => 256,       // End nodes use moderate memory
+            _ => 64,
         }
     }
 
     /// Estimate node CPU usage
-    fn estimate_node_cpu_usage(&self, node: &crate::types::Node) -> f64 {
-        match node.node_type {
-            NodeType::State => 0.3, // Storage operations are CPU intensive
-            NodeType::External => 0.5, // External calls are very CPU intensive
-            NodeType::Arithmetic => 0.1, // Arithmetic operations are light
-            NodeType::Logic => 0.05, // Logic operations are very light
-            NodeType::Control => 0.2, // Control flow is moderate
-            NodeType::Start => 0.1, // Start nodes are light
-            NodeType::End => 0.1, // End nodes are light
+    fn estimate_node_cpu_usage(&self, node: &VisualNode) -> f64 {
+        match node.node_type.as_str() {
+            "State" => 0.3,      // Storage operations are CPU intensive
+            "External" => 0.5,   // External calls are very CPU intensive
+            "Arithmetic" => 0.1, // Arithmetic operations are light
+            "Logic" => 0.05,     // Logic operations are very light
+            "Control" => 0.2,    // Control flow is moderate
+            "Start" => 0.1,      // Start nodes are light
+            "End" => 0.1,        // End nodes are light
+            _ => 0.1,
         }
     }
 
     /// Estimate node gas usage
-    fn estimate_node_gas_usage(&self, node: &crate::types::Node) -> u64 {
-        match node.node_type {
-            NodeType::State => 20000, // Storage operations are expensive
-            NodeType::External => 2600, // External calls are expensive
-            NodeType::Arithmetic => 3, // Arithmetic operations are cheap
-            NodeType::Logic => 1, // Logic operations are very cheap
-            NodeType::Control => 1, // Control flow is cheap
-            NodeType::Start => 100, // Start nodes are moderate
-            NodeType::End => 100, // End nodes are moderate
+    fn estimate_node_gas_usage(&self, node: &VisualNode) -> u64 {
+        match node.node_type.as_str() {
+            "State" => 20000,   // Storage operations are expensive
+            "External" => 2600, // External calls are expensive
+            "Arithmetic" => 3,  // Arithmetic operations are cheap
+            "Logic" => 1,       // Logic operations are very cheap
+            "Control" => 1,     // Control flow is cheap
+            "Start" => 100,     // Start nodes are moderate
+            "End" => 100,       // End nodes are moderate
+            _ => 1,
         }
     }
 }
@@ -946,12 +990,12 @@ mod tests {
     fn test_performance_optimizer() {
         let config = Config::default();
         let mut optimizer = PerformanceOptimizer::new(&config);
-        
-        let graph = Graph::new("test");
+
+        let graph = VisualGraph::new("test");
         let results = optimizer.optimize(&graph).unwrap();
-        
+
         assert!(!results.is_empty());
-        
+
         let summary = optimizer.get_optimization_summary(&results);
         assert!(summary.total_optimizations > 0);
     }
@@ -960,10 +1004,10 @@ mod tests {
     fn test_parallel_execution_optimizer() {
         let config = Config::default();
         let optimizer = ParallelExecutionOptimizer::new(&config);
-        
-        let graph = Graph::new("test");
+
+        let graph = VisualGraph::new("test");
         let plan = optimizer.generate_plan(&graph).unwrap();
-        
+
         assert!(plan.estimated_parallelism >= 0.0);
         assert!(plan.estimated_speedup >= 1.0);
     }
@@ -972,12 +1016,12 @@ mod tests {
     fn test_resource_usage_analyzer() {
         let config = Config::default();
         let analyzer = ResourceUsageAnalyzer::new(&config);
-        
-        let graph = Graph::new("test");
+
+        let graph = VisualGraph::new("test");
         let report = analyzer.analyze(&graph).unwrap();
-        
+
         assert!(report.memory_usage.peak_memory >= 0);
         assert!(report.cpu_usage.peak_cpu >= 0.0);
         assert!(report.gas_usage.total_gas >= 0);
     }
-} 
+}

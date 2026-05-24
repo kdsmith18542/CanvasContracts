@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 import { Brain, AlertTriangle, CheckCircle, Info, Zap } from 'lucide-react'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { TauriService } from '../services/tauriService'
 
 interface AnalysisResult {
     patterns_found: Array<{
@@ -40,8 +39,14 @@ export const AiAssistant: React.FC = () => {
 
         setIsAnalyzing(true)
         try {
-            const result = await TauriService.analyzePatterns(graph)
-            setAnalysisResult(result as AnalysisResult)
+            // Placeholder: mock analysis until backend is ungated
+            const result: AnalysisResult = {
+                patterns_found: [],
+                anti_patterns: [],
+                security_issues: [],
+                suggestions: ['AI analysis requires backend module. Build with ai feature to enable.']
+            }
+            setAnalysisResult(result)
         } catch (error) {
             console.error('Analysis failed:', error)
             alert('Analysis failed. Please try again.')

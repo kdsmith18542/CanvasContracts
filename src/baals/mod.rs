@@ -1,15 +1,26 @@
 use crate::{
     config::Config,
     error::{CanvasError, CanvasResult},
-    types::{ContractAddress, TransactionHash, Gas, Event},
+    types::{ContractAddress, Event, Gas, TransactionHash},
 };
 use ed25519_dalek::Signer;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
 pub trait BaalsClient: Send + Sync {
-    fn deploy_contract(&self, wasm_bytes: &[u8], constructor_args: serde_json::Value, private_key: &str) -> CanvasResult<DeploymentResult>;
-    fn call_contract(&self, contract_address: &str, function_name: &str, arguments: Vec<serde_json::Value>, private_key: &str) -> CanvasResult<TransactionResult>;
+    fn deploy_contract(
+        &self,
+        wasm_bytes: &[u8],
+        constructor_args: serde_json::Value,
+        private_key: &str,
+    ) -> CanvasResult<DeploymentResult>;
+    fn call_contract(
+        &self,
+        contract_address: &str,
+        function_name: &str,
+        arguments: Vec<serde_json::Value>,
+        private_key: &str,
+    ) -> CanvasResult<TransactionResult>;
     fn get_contract_state(&self, contract_address: &str) -> CanvasResult<ContractState>;
     fn read_storage(&self, contract_address: &str, key: &str) -> CanvasResult<serde_json::Value>;
     fn get_transaction_status(&self, transaction_hash: &str) -> CanvasResult<TransactionStatus>;
@@ -17,7 +28,10 @@ pub trait BaalsClient: Send + Sync {
 }
 
 pub fn create_client(config: &Config) -> CanvasResult<Box<dyn BaalsClient>> {
-    if config.baals.enable_local_node || config.baals.node_url.is_empty() || config.baals.node_url == "mock" {
+    if config.baals.enable_local_node
+        || config.baals.node_url.is_empty()
+        || config.baals.node_url == "mock"
+    {
         Ok(Box::new(MockBaalsClient::new(config)?))
     } else {
         Ok(Box::new(HttpBaalsClient::new(config)?))
@@ -60,7 +74,12 @@ pub struct TransactionStatus {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TransactionState { Pending, Confirmed, Failed, Reverted }
+pub enum TransactionState {
+    Pending,
+    Confirmed,
+    Failed,
+    Reverted,
+}
 
 #[derive(Debug, Clone)]
 pub struct BlockInfo {
@@ -80,7 +99,12 @@ pub struct MockBaalsClient {
 
 impl MockBaalsClient {
     pub fn new(config: &Config) -> CanvasResult<Self> {
-        Ok(Self { config: config.clone(), storage: HashMap::new(), deployed: HashMap::new(), block_counter: 12345 })
+        Ok(Self {
+            config: config.clone(),
+            storage: HashMap::new(),
+            deployed: HashMap::new(),
+            block_counter: 12345,
+        })
     }
 
     #[allow(dead_code)]
@@ -91,17 +115,30 @@ impl MockBaalsClient {
 
     fn sign_tx(&self, _payload: &[u8], private_key: &str) -> Vec<u8> {
         let sig: Vec<u8> = private_key.bytes().chain(std::iter::once(0xFA)).collect();
-        if sig.is_empty() { vec![0xFA; 64] } else { sig }
+        if sig.is_empty() {
+            vec![0xFA; 64]
+        } else {
+            sig
+        }
     }
 }
 
 impl BaalsClient for MockBaalsClient {
-    fn deploy_contract(&self, wasm_bytes: &[u8], _constructor_args: serde_json::Value, private_key: &str) -> CanvasResult<DeploymentResult> {
+    fn deploy_contract(
+        &self,
+        wasm_bytes: &[u8],
+        _constructor_args: serde_json::Value,
+        private_key: &str,
+    ) -> CanvasResult<DeploymentResult> {
         self.sign_tx(wasm_bytes, private_key);
         let contract_id = Self::contract_id(wasm_bytes);
         let tx_hash = format!("0x{:064x}", rand::random::<u128>());
 
-        log::info!("[MockBaaLS] Deploy contract {} ({} bytes)", contract_id, wasm_bytes.len());
+        log::info!(
+            "[MockBaaLS] Deploy contract {} ({} bytes)",
+            contract_id,
+            wasm_bytes.len()
+        );
 
         Ok(DeploymentResult {
             contract_address: contract_id,
@@ -111,11 +148,22 @@ impl BaalsClient for MockBaalsClient {
         })
     }
 
-    fn call_contract(&self, contract_address: &str, function_name: &str, arguments: Vec<serde_json::Value>, private_key: &str) -> CanvasResult<TransactionResult> {
+    fn call_contract(
+        &self,
+        contract_address: &str,
+        function_name: &str,
+        arguments: Vec<serde_json::Value>,
+        private_key: &str,
+    ) -> CanvasResult<TransactionResult> {
         self.sign_tx(function_name.as_bytes(), private_key);
         let tx_hash = format!("0x{:064x}", rand::random::<u128>());
 
-        log::info!("[MockBaaLS] Call {} on {} ({} args)", function_name, contract_address, arguments.len());
+        log::info!(
+            "[MockBaaLS] Call {} on {} ({} args)",
+            function_name,
+            contract_address,
+            arguments.len()
+        );
 
         Ok(TransactionResult {
             transaction_hash: tx_hash,
@@ -139,12 +187,21 @@ impl BaalsClient for MockBaalsClient {
             address: contract_address.to_string(),
             balance: 1_000_000,
             code_hash,
-            storage: self.storage.get(contract_address).cloned().unwrap_or_default(),
+            storage: self
+                .storage
+                .get(contract_address)
+                .cloned()
+                .unwrap_or_default(),
         })
     }
 
     fn read_storage(&self, contract_address: &str, key: &str) -> CanvasResult<serde_json::Value> {
-        Ok(self.storage.get(contract_address).and_then(|s| s.get(key)).cloned().unwrap_or(serde_json::Value::Null))
+        Ok(self
+            .storage
+            .get(contract_address)
+            .and_then(|s| s.get(key))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null))
     }
 
     fn get_transaction_status(&self, transaction_hash: &str) -> CanvasResult<TransactionStatus> {
@@ -161,7 +218,10 @@ impl BaalsClient for MockBaalsClient {
         Ok(BlockInfo {
             number: block_number,
             hash: format!("0x{:064x}", rand::random::<u128>()),
-            timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             transactions: vec![],
         })
     }
@@ -177,7 +237,9 @@ pub struct HttpBaalsClient {
 impl HttpBaalsClient {
     pub fn new(config: &Config) -> CanvasResult<Self> {
         let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(config.baals.connection_timeout.max(30)))
+            .timeout(std::time::Duration::from_secs(
+                config.baals.connection_timeout.max(30),
+            ))
             .build()
             .map_err(|e| CanvasError::Baals(format!("Failed to create HTTP client: {}", e)))?;
 
@@ -199,17 +261,32 @@ impl HttpBaalsClient {
     }
 
     fn auth_token(&self, private_key_hex: &str) -> CanvasResult<String> {
-        let key_bytes = hex::decode(private_key_hex)
-            .map_err(|_| CanvasError::Baals("Invalid private key hex".to_string()))?;
-
-        let keypair_bytes: [u8; 64] = key_bytes.as_slice().try_into()
-            .map_err(|_| CanvasError::Baals("Private key must be 64 bytes (32-byte seed + 32-byte public key)".to_string()))?;
-        let signing_key = ed25519_dalek::SigningKey::from_keypair_bytes(&keypair_bytes)
-            .map_err(|e| CanvasError::Baals(format!("Invalid Ed25519 key: {}", e)))?;
+        let signing_key = {
+            use zeroize::Zeroize;
+            let mut key_bytes = hex::decode(private_key_hex)
+                .map_err(|_| CanvasError::Baals("Invalid private key hex".to_string()))?;
+            let mut keypair_bytes: [u8; 64] = key_bytes.as_slice().try_into().map_err(|_| {
+                key_bytes.zeroize();
+                CanvasError::Baals(
+                    "Private key must be 64 bytes (32-byte seed + 32-byte public key)".to_string(),
+                )
+            })?;
+            let key =
+                ed25519_dalek::SigningKey::from_keypair_bytes(&keypair_bytes).map_err(|e| {
+                    key_bytes.zeroize();
+                    keypair_bytes.zeroize();
+                    CanvasError::Baals(format!("Invalid Ed25519 key: {}", e))
+                })?;
+            key_bytes.zeroize();
+            keypair_bytes.zeroize();
+            key
+        };
         let verifying_key = signing_key.verifying_key();
 
         let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let nonce: u64 = rand::random();
         let challenge = format!("baals-auth-token:{}:{}", timestamp, nonce);
         let signature = signing_key.sign(challenge.as_bytes());
@@ -221,7 +298,8 @@ impl HttpBaalsClient {
             "signature": hex::encode(signature.to_bytes()),
         });
 
-        let resp: serde_json::Value = self.client
+        let resp: serde_json::Value = self
+            .client
             .post(self.url("/api/v1/auth/token"))
             .json(&body)
             .send()
@@ -248,7 +326,12 @@ impl HttpBaalsClient {
 }
 
 impl BaalsClient for HttpBaalsClient {
-    fn deploy_contract(&self, wasm_bytes: &[u8], constructor_args: serde_json::Value, private_key: &str) -> CanvasResult<DeploymentResult> {
+    fn deploy_contract(
+        &self,
+        wasm_bytes: &[u8],
+        constructor_args: serde_json::Value,
+        private_key: &str,
+    ) -> CanvasResult<DeploymentResult> {
         let headers = self.headers_with_auth(private_key)?;
 
         // Use the private key hex as the deployer public key (in production, derive the keypair properly)
@@ -267,7 +350,8 @@ impl BaalsClient for HttpBaalsClient {
             "gas_limit": 1_000_000,
         });
 
-        let resp: serde_json::Value = self.client
+        let resp: serde_json::Value = self
+            .client
             .post(self.url("/api/v1/contracts/deploy"))
             .headers(headers)
             .json(&body)
@@ -276,11 +360,16 @@ impl BaalsClient for HttpBaalsClient {
             .json()
             .map_err(|e| CanvasError::Baals(format!("Deploy response parse failed: {}", e)))?;
 
-        let contract_id = resp.get("contract_id")
+        let contract_id = resp
+            .get("contract_id")
             .and_then(|c| c.as_str())
             .unwrap_or("");
 
-        log::info!("[BaaLS] Deployed contract {} ({} bytes)", contract_id, wasm_bytes.len());
+        log::info!(
+            "[BaaLS] Deployed contract {} ({} bytes)",
+            contract_id,
+            wasm_bytes.len()
+        );
 
         Ok(DeploymentResult {
             contract_address: contract_id.to_string(),
@@ -290,10 +379,17 @@ impl BaalsClient for HttpBaalsClient {
         })
     }
 
-    fn call_contract(&self, contract_address: &str, function_name: &str, arguments: Vec<serde_json::Value>, private_key: &str) -> CanvasResult<TransactionResult> {
+    fn call_contract(
+        &self,
+        contract_address: &str,
+        function_name: &str,
+        arguments: Vec<serde_json::Value>,
+        private_key: &str,
+    ) -> CanvasResult<TransactionResult> {
         let headers = self.headers_with_auth(private_key)?;
 
-        let args_hex: Vec<String> = arguments.iter()
+        let args_hex: Vec<String> = arguments
+            .iter()
             .map(|a| hex::encode(serde_json::to_string(a).unwrap_or_default().as_bytes()))
             .collect();
 
@@ -314,7 +410,8 @@ impl BaalsClient for HttpBaalsClient {
             "gas_limit": 1_000_000,
         });
 
-        let resp: serde_json::Value = self.client
+        let resp: serde_json::Value = self
+            .client
             .post(self.url("/api/v1/contracts/invoke"))
             .headers(headers)
             .json(&body)
@@ -323,34 +420,51 @@ impl BaalsClient for HttpBaalsClient {
             .json()
             .map_err(|e| CanvasError::Baals(format!("Call response parse failed: {}", e)))?;
 
-        let result_hex = resp.get("result_hex").and_then(|r| r.as_str()).unwrap_or("");
+        let result_hex = resp
+            .get("result_hex")
+            .and_then(|r| r.as_str())
+            .unwrap_or("");
         let result_bytes = hex::decode(result_hex).unwrap_or_default();
         let result_str = String::from_utf8(result_bytes).unwrap_or_default();
 
-        log::info!("[BaaLS] Called {} on {} ({} args)", function_name, contract_address, arguments.len());
+        log::info!(
+            "[BaaLS] Called {} on {} ({} args)",
+            function_name,
+            contract_address,
+            arguments.len()
+        );
 
         Ok(TransactionResult {
             transaction_hash: format!("call-{}-{}", contract_address, function_name),
             gas_used: (arguments.len() as u64 * 50).max(100),
             block_number: 0,
             success: true,
-            output: serde_json::from_str(&result_str).unwrap_or(serde_json::json!({"result": result_hex})),
+            output: serde_json::from_str(&result_str)
+                .unwrap_or(serde_json::json!({"result": result_hex})),
             events: vec![],
         })
     }
 
     fn get_contract_state(&self, contract_address: &str) -> CanvasResult<ContractState> {
-        let resp: serde_json::Value = self.client
+        let resp: serde_json::Value = self
+            .client
             .get(self.url(&format!("/api/v1/contracts/{}/state", contract_address)))
             .send()
             .map_err(|e| CanvasError::Baals(format!("State request failed: {}", e)))?
             .json()
             .map_err(|e| CanvasError::Baals(format!("State response parse failed: {}", e)))?;
 
-        let storage_list = resp.get("storage").and_then(|s| s.as_array()).cloned().unwrap_or_default();
+        let storage_list = resp
+            .get("storage")
+            .and_then(|s| s.as_array())
+            .cloned()
+            .unwrap_or_default();
         let mut storage = HashMap::new();
         for entry in &storage_list {
-            if let (Some(k), Some(v)) = (entry.get("key").and_then(|k| k.as_str()), entry.get("value")) {
+            if let (Some(k), Some(v)) = (
+                entry.get("key").and_then(|k| k.as_str()),
+                entry.get("value"),
+            ) {
                 storage.insert(k.to_string(), v.clone());
             }
         }
@@ -365,8 +479,12 @@ impl BaalsClient for HttpBaalsClient {
 
     fn read_storage(&self, contract_address: &str, key: &str) -> CanvasResult<serde_json::Value> {
         let key_hex = hex::encode(key);
-        let resp: serde_json::Value = self.client
-            .get(self.url(&format!("/api/v1/proofs/contract/{}/storage/{}", contract_address, key_hex)))
+        let resp: serde_json::Value = self
+            .client
+            .get(self.url(&format!(
+                "/api/v1/proofs/contract/{}/storage/{}",
+                contract_address, key_hex
+            )))
             .send()
             .map_err(|e| CanvasError::Baals(format!("Storage read failed: {}", e)))?
             .json()
@@ -380,22 +498,35 @@ impl BaalsClient for HttpBaalsClient {
     }
 
     fn get_transaction_status(&self, transaction_hash: &str) -> CanvasResult<TransactionStatus> {
-        let resp: serde_json::Value = self.client
-            .get(self.url(&format!("/api/v1/transactions/{}/finality", transaction_hash)))
+        let resp: serde_json::Value = self
+            .client
+            .get(self.url(&format!(
+                "/api/v1/transactions/{}/finality",
+                transaction_hash
+            )))
             .send()
             .map_err(|e| CanvasError::Baals(format!("Tx status request failed: {}", e)))?
             .json()
             .map_err(|e| CanvasError::Baals(format!("Tx status response parse failed: {}", e)))?;
 
         let finality = resp.get("finality").unwrap_or(&resp);
-        let status_str = finality.get("status").and_then(|s| s.as_str()).unwrap_or("Pending");
+        let status_str = finality
+            .get("status")
+            .and_then(|s| s.as_str())
+            .unwrap_or("Pending");
         let status = match status_str {
             "Success" => TransactionState::Confirmed,
             "Failed" => TransactionState::Failed,
             _ => TransactionState::Pending,
         };
-        let block_height = finality.get("block_height").and_then(|b| b.as_u64()).unwrap_or(0);
-        let confirmations = finality.get("confirmations").and_then(|c| c.as_u64()).unwrap_or(0);
+        let block_height = finality
+            .get("block_height")
+            .and_then(|b| b.as_u64())
+            .unwrap_or(0);
+        let confirmations = finality
+            .get("confirmations")
+            .and_then(|c| c.as_u64())
+            .unwrap_or(0);
 
         Ok(TransactionStatus {
             hash: transaction_hash.to_string(),
@@ -407,20 +538,36 @@ impl BaalsClient for HttpBaalsClient {
     }
 
     fn get_block_info(&self, block_number: u64) -> CanvasResult<BlockInfo> {
-        let resp: serde_json::Value = self.client
+        let resp: serde_json::Value = self
+            .client
             .get(self.url(&format!("/api/v1/blocks/{}", block_number)))
             .send()
             .map_err(|e| CanvasError::Baals(format!("Block request failed: {}", e)))?
             .json()
             .map_err(|e| CanvasError::Baals(format!("Block response parse failed: {}", e)))?;
 
-        let hash = resp.get("hash").and_then(|h| h.as_str()).map(hex::encode).unwrap_or_default();
+        let hash = resp
+            .get("hash")
+            .and_then(|h| h.as_str())
+            .map(hex::encode)
+            .unwrap_or_default();
         let timestamp = resp.get("timestamp").and_then(|t| t.as_u64()).unwrap_or(0);
-        let txs = resp.get("transactions").and_then(|t| t.as_array())
-            .map(|a| a.iter().filter_map(|t| t.as_str().map(|s| s.to_string())).collect())
+        let txs = resp
+            .get("transactions")
+            .and_then(|t| t.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
-        Ok(BlockInfo { number: block_number, hash, timestamp, transactions: txs })
+        Ok(BlockInfo {
+            number: block_number,
+            hash,
+            timestamp,
+            transactions: txs,
+        })
     }
 }
 
@@ -431,7 +578,10 @@ pub struct BaalsNodeManager {
 
 impl BaalsNodeManager {
     pub fn new(config: &Config) -> CanvasResult<Self> {
-        Ok(Self { config: config.clone(), process: None })
+        Ok(Self {
+            config: config.clone(),
+            process: None,
+        })
     }
 
     pub fn initialize(&mut self) -> CanvasResult<()> {
@@ -446,9 +596,9 @@ impl BaalsNodeManager {
     }
 
     pub fn is_local_node_running(&mut self) -> bool {
-        self.process.as_mut().is_some_and(|p| {
-            p.try_wait().map(|s| s.is_none()).unwrap_or(false)
-        })
+        self.process
+            .as_mut()
+            .is_some_and(|p| p.try_wait().map(|s| s.is_none()).unwrap_or(false))
     }
 
     fn start_local_node(&mut self) -> CanvasResult<()> {
@@ -456,8 +606,10 @@ impl BaalsNodeManager {
         log::info!("Starting local BaaLS node on port {}", port);
 
         match std::process::Command::new("baalsd")
-            .arg("--port").arg(port.to_string())
-            .arg("--data-dir").arg("/tmp/baals-data")
+            .arg("--port")
+            .arg(port.to_string())
+            .arg("--data-dir")
+            .arg("/tmp/baals-data")
             .spawn()
         {
             Ok(child) => {
@@ -468,13 +620,15 @@ impl BaalsNodeManager {
                     match p.try_wait() {
                         Ok(Some(status)) => {
                             return Err(CanvasError::Baals(format!(
-                                "BaaLS node exited immediately with status: {}", status
+                                "BaaLS node exited immediately with status: {}",
+                                status
                             )));
                         }
                         Ok(None) => {} // still running — good
                         Err(e) => {
                             return Err(CanvasError::Baals(format!(
-                                "Failed to check BaaLS node status: {}", e
+                                "Failed to check BaaLS node status: {}",
+                                e
                             )));
                         }
                     }
@@ -482,7 +636,8 @@ impl BaalsNodeManager {
                 Ok(())
             }
             Err(e) => Err(CanvasError::Baals(format!(
-                "Failed to spawn BaaLS node: {} — is 'baalsd' installed?", e
+                "Failed to spawn BaaLS node: {} — is 'baalsd' installed?",
+                e
             ))),
         }
     }
@@ -493,7 +648,8 @@ impl BaalsNodeManager {
             let _ = child.kill();
             match child.wait() {
                 Ok(status) => {
-                    if !status.success() && status.code() != Some(-9) && status.code() != Some(143) {
+                    if !status.success() && status.code() != Some(-9) && status.code() != Some(143)
+                    {
                         log::warn!("BaaLS node exited with non-zero status: {}", status);
                     }
                 }
@@ -505,12 +661,23 @@ impl BaalsNodeManager {
 }
 
 pub fn sign_payload(payload: &[u8], private_key_hex: &str) -> CanvasResult<Vec<u8>> {
-    let key_bytes = hex::decode(private_key_hex)
-        .map_err(|_| CanvasError::Baals("Invalid private key hex".to_string()))?;
-    let keypair_bytes: [u8; 64] = key_bytes.as_slice().try_into()
-        .map_err(|_| CanvasError::Baals("Private key must be 64 bytes".to_string()))?;
-    let key = ed25519_dalek::SigningKey::from_keypair_bytes(&keypair_bytes)
-        .map_err(|e| CanvasError::Baals(format!("Invalid Ed25519 key: {}", e)))?;
+    let key = {
+        use zeroize::Zeroize;
+        let mut key_bytes = hex::decode(private_key_hex)
+            .map_err(|_| CanvasError::Baals("Invalid private key hex".to_string()))?;
+        let mut keypair_bytes: [u8; 64] = key_bytes.as_slice().try_into().map_err(|_| {
+            key_bytes.zeroize();
+            CanvasError::Baals("Private key must be 64 bytes".to_string())
+        })?;
+        let key = ed25519_dalek::SigningKey::from_keypair_bytes(&keypair_bytes).map_err(|e| {
+            key_bytes.zeroize();
+            keypair_bytes.zeroize();
+            CanvasError::Baals(format!("Invalid Ed25519 key: {}", e))
+        })?;
+        key_bytes.zeroize();
+        keypair_bytes.zeroize();
+        key
+    };
     Ok(key.sign(payload).to_bytes().to_vec())
 }
 
@@ -522,9 +689,13 @@ mod tests {
     fn test_mock_deploy_and_call() {
         let config = Config::default();
         let client = MockBaalsClient::new(&config).unwrap();
-        let deploy = client.deploy_contract(b"wasm", serde_json::json!({}), "key").unwrap();
+        let deploy = client
+            .deploy_contract(b"wasm", serde_json::json!({}), "key")
+            .unwrap();
         assert!(deploy.contract_address.starts_with("0x") || deploy.contract_address.len() == 64);
-        let call = client.call_contract(&deploy.contract_address, "test", vec![], "key").unwrap();
+        let call = client
+            .call_contract(&deploy.contract_address, "test", vec![], "key")
+            .unwrap();
         assert!(call.success);
     }
 
@@ -541,7 +712,9 @@ mod tests {
     fn test_factory_creates_mock() {
         let config = Config::default();
         let client = create_client(&config).unwrap();
-        assert!(client.deploy_contract(b"t", serde_json::json!({}), "key").is_ok());
+        assert!(client
+            .deploy_contract(b"t", serde_json::json!({}), "key")
+            .is_ok());
     }
 
     #[test]

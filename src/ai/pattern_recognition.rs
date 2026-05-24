@@ -1,11 +1,9 @@
 use crate::{
     error::CanvasResult,
-    types::{Graph, NodeId, NodeType, VisualGraph},
+    types::{NodeId, NodeType, VisualGraph},
 };
 
-use super::{
-    AntiPattern, ContractPattern, PatternCategory, SecurityIssue, Severity,
-};
+use super::{AntiPattern, ContractPattern, PatternCategory, SecurityIssue, Severity};
 
 /// Pattern recognition engine using graph analysis
 pub struct PatternRecognitionEngine {
@@ -60,7 +58,7 @@ impl PatternRecognitionEngine {
     }
 
     /// Recognize contract patterns in the graph
-    pub fn recognize_patterns(&self, graph: &Graph) -> CanvasResult<Vec<ContractPattern>> {
+    pub fn recognize_patterns(&self, graph: &VisualGraph) -> CanvasResult<Vec<ContractPattern>> {
         let mut patterns_found = Vec::new();
 
         for pattern_def in &self.patterns {
@@ -81,7 +79,7 @@ impl PatternRecognitionEngine {
     }
 
     /// Detect anti-patterns in the graph
-    pub fn detect_anti_patterns(&self, graph: &Graph) -> CanvasResult<Vec<AntiPattern>> {
+    pub fn detect_anti_patterns(&self, graph: &VisualGraph) -> CanvasResult<Vec<AntiPattern>> {
         let mut anti_patterns_found = Vec::new();
 
         for anti_pattern_def in &self.anti_patterns {
@@ -100,7 +98,7 @@ impl PatternRecognitionEngine {
     }
 
     /// Detect security issues in the graph
-    pub fn detect_security_issues(&self, graph: &Graph) -> CanvasResult<Vec<SecurityIssue>> {
+    pub fn detect_security_issues(&self, graph: &VisualGraph) -> CanvasResult<Vec<SecurityIssue>> {
         let mut security_issues = Vec::new();
 
         for security_pattern_def in &self.security_patterns {
@@ -120,8 +118,8 @@ impl PatternRecognitionEngine {
     }
 
     /// Match a pattern against the graph
-    fn match_pattern(&self, graph: &Graph, pattern: &PatternDefinition) -> Option<f64> {
-        let nodes = graph.get_nodes();
+    fn match_pattern(&self, graph: &VisualGraph, pattern: &PatternDefinition) -> Option<f64> {
+        let nodes = graph.to_nodes();
         let mut matches = 0;
         let mut total_required = pattern.node_sequence.len();
 
@@ -149,9 +147,13 @@ impl PatternRecognitionEngine {
     }
 
     /// Match an anti-pattern against the graph
-    fn match_anti_pattern(&self, graph: &Graph, anti_pattern: &AntiPatternDefinition) -> bool {
-        let nodes = graph.get_nodes();
-        
+    fn match_anti_pattern(
+        &self,
+        graph: &VisualGraph,
+        anti_pattern: &AntiPatternDefinition,
+    ) -> bool {
+        let nodes = graph.to_nodes();
+
         // Check if the anti-pattern sequence exists
         for window in nodes.windows(anti_pattern.pattern.len()) {
             let window_types: Vec<NodeType> = window.iter().map(|n| n.node_type.clone()).collect();
@@ -164,9 +166,13 @@ impl PatternRecognitionEngine {
     }
 
     /// Match a security pattern against the graph
-    fn match_security_pattern(&self, graph: &Graph, security_pattern: &SecurityPatternDefinition) -> bool {
-        let nodes = graph.get_nodes();
-        
+    fn match_security_pattern(
+        &self,
+        graph: &VisualGraph,
+        security_pattern: &SecurityPatternDefinition,
+    ) -> bool {
+        let nodes = graph.to_nodes();
+
         // Check if the security pattern sequence exists
         for window in nodes.windows(security_pattern.pattern.len()) {
             let window_types: Vec<NodeType> = window.iter().map(|n| n.node_type.clone()).collect();
@@ -179,11 +185,16 @@ impl PatternRecognitionEngine {
     }
 
     /// Check if there's a connection between two node types
-    fn has_connection(&self, graph: &Graph, source_type: &NodeType, target_type: &NodeType) -> bool {
-        let edges = graph.get_edges();
-        let nodes = graph.get_nodes();
+    fn has_connection(
+        &self,
+        graph: &VisualGraph,
+        source_type: &NodeType,
+        target_type: &NodeType,
+    ) -> bool {
+        let edges = graph.to_edges();
+        let nodes = graph.to_nodes();
 
-        for edge in edges {
+        for edge in &edges {
             if let (Some(source), Some(target)) = (
                 nodes.iter().find(|n| n.id == edge.source),
                 nodes.iter().find(|n| n.id == edge.target),
@@ -198,11 +209,11 @@ impl PatternRecognitionEngine {
     }
 
     /// Find nodes that match a pattern
-    fn find_pattern_nodes(&self, graph: &Graph, pattern: &PatternDefinition) -> Vec<NodeId> {
-        let nodes = graph.get_nodes();
+    fn find_pattern_nodes(&self, graph: &VisualGraph, pattern: &PatternDefinition) -> Vec<NodeId> {
+        let nodes = graph.to_nodes();
         let mut pattern_nodes = Vec::new();
 
-        for node in nodes {
+        for node in &nodes {
             if pattern.node_sequence.contains(&node.node_type) {
                 pattern_nodes.push(node.id.clone());
             }
@@ -212,8 +223,12 @@ impl PatternRecognitionEngine {
     }
 
     /// Find nodes that match an anti-pattern
-    fn find_anti_pattern_nodes(&self, graph: &Graph, anti_pattern: &AntiPatternDefinition) -> Vec<NodeId> {
-        let nodes = graph.get_nodes();
+    fn find_anti_pattern_nodes(
+        &self,
+        graph: &VisualGraph,
+        anti_pattern: &AntiPatternDefinition,
+    ) -> Vec<NodeId> {
+        let nodes = graph.to_nodes();
         let mut anti_pattern_nodes = Vec::new();
 
         for window in nodes.windows(anti_pattern.pattern.len()) {
@@ -227,8 +242,12 @@ impl PatternRecognitionEngine {
     }
 
     /// Find nodes that match a security pattern
-    fn find_security_pattern_nodes(&self, graph: &Graph, security_pattern: &SecurityPatternDefinition) -> Vec<NodeId> {
-        let nodes = graph.get_nodes();
+    fn find_security_pattern_nodes(
+        &self,
+        graph: &VisualGraph,
+        security_pattern: &SecurityPatternDefinition,
+    ) -> Vec<NodeId> {
+        let nodes = graph.to_nodes();
         let mut security_pattern_nodes = Vec::new();
 
         for window in nodes.windows(security_pattern.pattern.len()) {
@@ -250,8 +269,8 @@ impl PatternRecognitionEngine {
                 category: PatternCategory::Token,
                 description: "Standard fungible token contract".to_string(),
                 node_sequence: vec![
-                    NodeType::State, // balance storage
-                    NodeType::Logic, // transfer logic
+                    NodeType::State,    // balance storage
+                    NodeType::Logic,    // transfer logic
                     NodeType::External, // transfer event
                 ],
                 required_connections: vec![
@@ -266,8 +285,8 @@ impl PatternRecognitionEngine {
                 category: PatternCategory::Voting,
                 description: "Decentralized voting system".to_string(),
                 node_sequence: vec![
-                    NodeType::State, // vote storage
-                    NodeType::Logic, // vote counting
+                    NodeType::State,   // vote storage
+                    NodeType::Logic,   // vote counting
                     NodeType::Control, // deadline check
                 ],
                 required_connections: vec![
@@ -282,8 +301,8 @@ impl PatternRecognitionEngine {
                 category: PatternCategory::Escrow,
                 description: "Conditional payment system".to_string(),
                 node_sequence: vec![
-                    NodeType::State, // escrow storage
-                    NodeType::Logic, // release logic
+                    NodeType::State,   // escrow storage
+                    NodeType::Logic,   // release logic
                     NodeType::Control, // timeout check
                 ],
                 required_connections: vec![
@@ -357,4 +376,4 @@ impl PatternRecognitionEngine {
             },
         ]
     }
-} 
+}

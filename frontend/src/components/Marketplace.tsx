@@ -1,20 +1,15 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import {
     Search,
     Filter,
     Download,
     Star,
-    Eye,
-    User,
     Calendar,
-    Tag,
     Grid,
     List,
     Heart,
     Share2,
-    Bookmark
 } from 'lucide-react'
-import { TauriService } from '../services/tauriService'
 
 interface MarketplaceItem {
     id: string
@@ -60,7 +55,7 @@ export const Marketplace: React.FC = () => {
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
     const [sortBy, setSortBy] = useState<'relevance' | 'rating' | 'downloads' | 'date' | 'name'>('relevance')
     const [loading, setLoading] = useState(false)
-    const [selectedItem, setSelectedItem] = useState<MarketplaceItem | null>(null)
+
     const [showFilters, setShowFilters] = useState(false)
 
     // Mock data for demonstration

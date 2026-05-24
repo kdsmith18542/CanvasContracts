@@ -6,8 +6,7 @@ use std::path::PathBuf;
 use crate::error::{CanvasError, CanvasResult};
 
 /// Main configuration structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     /// Application settings
     pub app: AppConfig,
@@ -88,8 +87,7 @@ pub struct BaalsConfig {
 }
 
 /// Development configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DevelopmentConfig {
     /// Enable hot reload
     pub hot_reload: bool,
@@ -102,7 +100,6 @@ pub struct DevelopmentConfig {
     /// Mock BaaLS enabled
     pub mock_baals: bool,
 }
-
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -135,7 +132,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             runtime_type: "wasmtime".to_string(),
-            memory_limit: 1000, // 64MB
+            memory_limit: 1000,            // 64MB
             stack_size_limit: 1024 * 1024, // 1MB
             gas_metering: true,
             sandbox_mode: true,
@@ -157,16 +154,15 @@ impl Default for BaalsConfig {
     }
 }
 
-
 impl Config {
     /// Load configuration from file
     pub fn from_file(path: &PathBuf) -> CanvasResult<Self> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| CanvasError::Config(format!("Failed to read config file: {}", e)))?;
-        
+
         let config: Config = toml::from_str(&content)
             .map_err(|e| CanvasError::Config(format!("Failed to parse config file: {}", e)))?;
-        
+
         Ok(config)
     }
 
@@ -174,53 +170,53 @@ impl Config {
     pub fn save_to_file(&self, path: &PathBuf) -> CanvasResult<()> {
         let content = toml::to_string_pretty(self)
             .map_err(|e| CanvasError::Config(format!("Failed to serialize config: {}", e)))?;
-        
+
         std::fs::write(path, content)
             .map_err(|e| CanvasError::Config(format!("Failed to write config file: {}", e)))?;
-        
+
         Ok(())
     }
 
     /// Load configuration from environment variables
     pub fn from_env() -> CanvasResult<Self> {
         let mut config = Config::default();
-        
+
         // Override with environment variables
         if let Ok(log_level) = std::env::var("CANVAS_LOG_LEVEL") {
             config.app.log_level = log_level;
         }
-        
+
         if let Ok(debug) = std::env::var("CANVAS_DEBUG") {
             config.app.debug = debug.parse().unwrap_or(false);
         }
-        
+
         if let Ok(node_url) = std::env::var("CANVAS_BAALS_NODE_URL") {
             config.baals.node_url = node_url;
         }
-        
+
         if let Ok(auth_token) = std::env::var("CANVAS_BAALS_AUTH_TOKEN") {
             config.baals.auth_token = Some(auth_token);
         }
-        
+
         if let Ok(optimization) = std::env::var("CANVAS_COMPILER_OPTIMIZATION") {
             if let Ok(level) = optimization.parse() {
                 config.compiler.optimization_level = level;
             }
         }
-        
+
         if let Ok(gas_limit) = std::env::var("CANVAS_COMPILER_MAX_GAS") {
             if let Ok(limit) = gas_limit.parse() {
                 config.compiler.max_gas_limit = limit;
             }
         }
-        
+
         Ok(config)
     }
 
     /// Get configuration value by key path
     pub fn get_value(&self, key_path: &str) -> Option<serde_json::Value> {
         let keys: Vec<&str> = key_path.split('.').collect();
-        
+
         match keys.as_slice() {
             ["app", key] => match *key {
                 "name" => Some(serde_json::Value::String(self.app.name.clone())),
@@ -230,14 +226,20 @@ impl Config {
                 _ => None,
             },
             ["compiler", key] => match *key {
-                "optimization_level" => Some(serde_json::Value::Number(self.compiler.optimization_level.into())),
+                "optimization_level" => Some(serde_json::Value::Number(
+                    self.compiler.optimization_level.into(),
+                )),
                 "debug_info" => Some(serde_json::Value::Bool(self.compiler.debug_info)),
                 "gas_estimation" => Some(serde_json::Value::Bool(self.compiler.gas_estimation)),
-                "max_gas_limit" => Some(serde_json::Value::Number(self.compiler.max_gas_limit.into())),
+                "max_gas_limit" => Some(serde_json::Value::Number(
+                    self.compiler.max_gas_limit.into(),
+                )),
                 _ => None,
             },
             ["runtime", key] => match *key {
-                "runtime_type" => Some(serde_json::Value::String(self.runtime.runtime_type.clone())),
+                "runtime_type" => {
+                    Some(serde_json::Value::String(self.runtime.runtime_type.clone()))
+                }
                 "memory_limit" => Some(serde_json::Value::Number(self.runtime.memory_limit.into())),
                 "gas_metering" => Some(serde_json::Value::Bool(self.runtime.gas_metering)),
                 "sandbox_mode" => Some(serde_json::Value::Bool(self.runtime.sandbox_mode)),
@@ -245,7 +247,9 @@ impl Config {
             },
             ["baals", key] => match *key {
                 "node_url" => Some(serde_json::Value::String(self.baals.node_url.clone())),
-                "connection_timeout" => Some(serde_json::Value::Number(self.baals.connection_timeout.into())),
+                "connection_timeout" => Some(serde_json::Value::Number(
+                    self.baals.connection_timeout.into(),
+                )),
                 "enable_local_node" => Some(serde_json::Value::Bool(self.baals.enable_local_node)),
                 _ => None,
             },
@@ -256,7 +260,7 @@ impl Config {
     /// Set configuration value by key path
     pub fn set_value(&mut self, key_path: &str, value: serde_json::Value) -> CanvasResult<()> {
         let keys: Vec<&str> = key_path.split('.').collect();
-        
+
         match keys.as_slice() {
             ["app", key] => match *key {
                 "name" => {
@@ -274,7 +278,12 @@ impl Config {
                         self.app.debug = debug;
                     }
                 }
-                _ => return Err(CanvasError::Config(format!("Unknown app config key: {}", key))),
+                _ => {
+                    return Err(CanvasError::Config(format!(
+                        "Unknown app config key: {}",
+                        key
+                    )))
+                }
             },
             ["compiler", key] => match *key {
                 "optimization_level" => {
@@ -287,11 +296,21 @@ impl Config {
                         self.compiler.max_gas_limit = limit;
                     }
                 }
-                _ => return Err(CanvasError::Config(format!("Unknown compiler config key: {}", key))),
+                _ => {
+                    return Err(CanvasError::Config(format!(
+                        "Unknown compiler config key: {}",
+                        key
+                    )))
+                }
             },
-            _ => return Err(CanvasError::Config(format!("Unknown config key path: {}", key_path))),
+            _ => {
+                return Err(CanvasError::Config(format!(
+                    "Unknown config key path: {}",
+                    key_path
+                )))
+            }
         }
-        
+
         Ok(())
     }
 
@@ -301,38 +320,52 @@ impl Config {
         if self.app.name.is_empty() {
             return Err(CanvasError::Config("App name cannot be empty".to_string()));
         }
-        
+
         if self.app.version.is_empty() {
-            return Err(CanvasError::Config("App version cannot be empty".to_string()));
+            return Err(CanvasError::Config(
+                "App version cannot be empty".to_string(),
+            ));
         }
-        
+
         // Validate compiler config
         if self.compiler.optimization_level > 3 {
-            return Err(CanvasError::Config("Optimization level must be 0-3".to_string()));
+            return Err(CanvasError::Config(
+                "Optimization level must be 0-3".to_string(),
+            ));
         }
-        
+
         if self.compiler.max_gas_limit == 0 {
-            return Err(CanvasError::Config("Max gas limit must be greater than 0".to_string()));
+            return Err(CanvasError::Config(
+                "Max gas limit must be greater than 0".to_string(),
+            ));
         }
-        
+
         // Validate runtime config
         if self.runtime.memory_limit == 0 {
-            return Err(CanvasError::Config("Memory limit must be greater than 0".to_string()));
+            return Err(CanvasError::Config(
+                "Memory limit must be greater than 0".to_string(),
+            ));
         }
-        
+
         if self.runtime.timeout == 0 {
-            return Err(CanvasError::Config("Timeout must be greater than 0".to_string()));
+            return Err(CanvasError::Config(
+                "Timeout must be greater than 0".to_string(),
+            ));
         }
-        
+
         // Validate BaaLS config
         if self.baals.connection_timeout == 0 {
-            return Err(CanvasError::Config("Connection timeout must be greater than 0".to_string()));
+            return Err(CanvasError::Config(
+                "Connection timeout must be greater than 0".to_string(),
+            ));
         }
-        
+
         if self.baals.retry_attempts == 0 {
-            return Err(CanvasError::Config("Retry attempts must be greater than 0".to_string()));
+            return Err(CanvasError::Config(
+                "Retry attempts must be greater than 0".to_string(),
+            ));
         }
-        
+
         Ok(())
     }
 }
@@ -353,9 +386,9 @@ impl ConfigManager {
             config.save_to_file(&config_path)?;
             config
         };
-        
+
         config.validate()?;
-        
+
         Ok(Self {
             config,
             config_path,
@@ -412,7 +445,7 @@ mod tests {
     fn test_config_validation() {
         let mut config = Config::default();
         assert!(config.validate().is_ok());
-        
+
         config.app.name = String::new();
         assert!(config.validate().is_err());
     }
@@ -421,9 +454,9 @@ mod tests {
     fn test_config_file_io() {
         let temp_file = NamedTempFile::new().unwrap();
         let config = Config::default();
-        
+
         assert!(config.save_to_file(&temp_file.path().to_path_buf()).is_ok());
-        
+
         let loaded_config = Config::from_file(&temp_file.path().to_path_buf()).unwrap();
         assert_eq!(loaded_config.app.name, config.app.name);
     }
@@ -431,15 +464,15 @@ mod tests {
     #[test]
     fn test_config_value_access() {
         let config = Config::default();
-        
+
         assert_eq!(
             config.get_value("app.name"),
             Some(serde_json::Value::String("Canvas Contracts".to_string()))
         );
-        
+
         assert_eq!(
             config.get_value("compiler.optimization_level"),
             Some(serde_json::Value::Number(2.into()))
         );
     }
-} 
+}
