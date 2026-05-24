@@ -52,27 +52,7 @@ impl WasmRuntime {
             .set_fuel(gas_limit)
             .map_err(|e| CanvasError::Wasm(format!("Failed to set fuel: {}", e)))?;
 
-        let mut linker = wasmtime::Linker::new(&self.engine);
-
-        let storage = std::sync::Arc::new(std::sync::Mutex::new(HashMap::<i64, i64>::new()));
-        let storage_clone = storage.clone();
-        linker
-            .func_wrap("baals", "baals_read_storage", move |key: i64| -> i64 {
-                let map = storage_clone.lock().unwrap();
-                map.get(&key).copied().unwrap_or(0)
-            })
-            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
-
-        linker
-            .func_wrap(
-                "baals",
-                "baals_write_storage",
-                move |key: i64, value: i64| {
-                    let mut map = storage.lock().unwrap();
-                    map.insert(key, value);
-                },
-            )
-            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+        let linker = self.build_default_linker()?;
 
         let instance = linker
             .instantiate(&mut store, &module)
@@ -108,9 +88,15 @@ impl WasmRuntime {
         &self,
         wasm_bytes: &[u8],
         function_name: &str,
-        _arguments: Vec<serde_json::Value>,
+        arguments: Vec<serde_json::Value>,
         gas_limit: Gas,
     ) -> CanvasResult<SimulationResult> {
+        if !arguments.is_empty() {
+            return Err(CanvasError::Wasm(
+                "execute_function currently supports zero-argument functions only".to_string(),
+            ));
+        }
+
         let start_time = std::time::Instant::now();
 
         let module = wasmtime::Module::new(&self.engine, wasm_bytes)
@@ -121,7 +107,7 @@ impl WasmRuntime {
             .set_fuel(gas_limit)
             .map_err(|e| CanvasError::Wasm(format!("Failed to set fuel: {}", e)))?;
 
-        let linker = wasmtime::Linker::new(&self.engine);
+        let linker = self.build_default_linker()?;
 
         let instance = linker
             .instantiate(&mut store, &module)
@@ -177,6 +163,32 @@ impl WasmRuntime {
             .map(|i| format!("{}.{}", i.module(), i.name()))
             .collect();
         Ok(imports)
+    }
+
+    fn build_default_linker(&self) -> CanvasResult<wasmtime::Linker<HostState>> {
+        let mut linker = wasmtime::Linker::new(&self.engine);
+
+        let storage = std::sync::Arc::new(std::sync::Mutex::new(HashMap::<i64, i64>::new()));
+        let storage_clone = storage.clone();
+        linker
+            .func_wrap("baals", "baals_read_storage", move |key: i64| -> i64 {
+                let map = storage_clone.lock().unwrap();
+                map.get(&key).copied().unwrap_or(0)
+            })
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "baals",
+                "baals_write_storage",
+                move |key: i64, value: i64| {
+                    let mut map = storage.lock().unwrap();
+                    map.insert(key, value);
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        Ok(linker)
     }
 }
 
@@ -332,6 +344,86 @@ mod tests {
             .unwrap();
         assert_eq!(result.output, serde_json::json!({"result": Some(42i64)}));
         assert!(result.gas_used > 0);
+    }
+
+    #[test]
+    fn test_execute_function_supports_imported_modules() {
+        let config = Config::default();
+        let runtime = WasmRuntime::new(&config).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+
+        let mut types = TypeSection::new();
+        // type 0: main () -> i64
+        types.function([], [ValType::I64]);
+        // type 1: read (i64) -> i64
+        types.function([ValType::I64], [ValType::I64]);
+        // type 2: write (i64, i64) -> ()
+        types.function([ValType::I64, ValType::I64], []);
+        module.section(&types);
+
+        let mut imports = ImportSection::new();
+        imports.import("baals", "baals_read_storage", EntityType::Function(1));
+        imports.import("baals", "baals_write_storage", EntityType::Function(2));
+        module.section(&imports);
+
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+
+        let mut exports = ExportSection::new();
+        // main local function index = imported funcs (2) + local func offset (0)
+        exports.export("main", ExportKind::Func, 2);
+        module.section(&exports);
+
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        func.instruction(&Instruction::I64Const(7));
+        func.instruction(&Instruction::I64Const(99));
+        func.instruction(&Instruction::Call(1)); // write
+        func.instruction(&Instruction::I64Const(7));
+        func.instruction(&Instruction::Call(0)); // read
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+
+        let wasm_bytes = module.finish();
+        let result = runtime
+            .execute_function(&wasm_bytes, "main", Vec::new(), 1000)
+            .unwrap();
+
+        assert_eq!(result.output, serde_json::json!({"result": Some(99i64)}));
+    }
+
+    #[test]
+    fn test_execute_function_rejects_arguments_for_now() {
+        let config = Config::default();
+        let runtime = WasmRuntime::new(&config).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types.function([], [ValType::I64]);
+        module.section(&types);
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+        let mut exports = ExportSection::new();
+        exports.export("main", ExportKind::Func, 0);
+        module.section(&exports);
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+        let wasm_bytes = module.finish();
+
+        let err = runtime
+            .execute_function(&wasm_bytes, "main", vec![serde_json::json!(1)], 1000)
+            .unwrap_err();
+        assert!(err.to_string().contains("zero-argument functions only"));
     }
 
     #[test]
