@@ -35,6 +35,46 @@ impl ImportSignature {
                 params: vec![ValType::I64, ValType::I64],
                 results: vec![],
             }),
+            ("baals", "baals_get_sender") => Some(Self {
+                params: vec![],
+                results: vec![ValType::I64],
+            }),
+            ("baals", "baals_get_contract_id") => Some(Self {
+                params: vec![],
+                results: vec![ValType::I64],
+            }),
+            ("baals", "baals_get_block_timestamp") => Some(Self {
+                params: vec![],
+                results: vec![ValType::I64],
+            }),
+            ("baals", "baals_get_block_height") => Some(Self {
+                params: vec![],
+                results: vec![ValType::I64],
+            }),
+            ("baals", "baals_emit_event") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![],
+            }),
+            ("baals", "baals_revert") => Some(Self {
+                params: vec![ValType::I64],
+                results: vec![],
+            }),
+            ("baals", "baals_hash_sha256") => Some(Self {
+                params: vec![ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("baals", "baals_call_contract") => Some(Self {
+                params: vec![ValType::I64, ValType::I64, ValType::I64],
+                results: vec![],
+            }),
+            ("baals", "baals_read_call_result") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![ValType::I64],
+            }),
+            ("baals", "baals_transfer_value") => Some(Self {
+                params: vec![ValType::I64, ValType::I64],
+                results: vec![],
+            }),
             _ => None,
         }
     }
@@ -631,6 +671,90 @@ mod tests {
             imports: vec![
                 ("baals".to_string(), "baals_write_storage".to_string()),
                 ("baals".to_string(), "baals_read_storage".to_string()),
+            ],
+        };
+
+        let result = gen.generate(&ast).unwrap();
+        let engine = wasmtime::Engine::default();
+        let validation = wasmtime::Module::validate(&engine, &result.wasm_bytes);
+        assert!(
+            validation.is_ok(),
+            "WASM validation failed: {:?}",
+            validation.err()
+        );
+    }
+
+    #[test]
+    fn test_baals_runtime_import_wasm_validates() {
+        let gen = WasmGenerator::new();
+        let ast = AST {
+            body: vec![
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_get_sender".to_string(),
+                    args: vec![],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_get_contract_id".to_string(),
+                    args: vec![],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_get_block_timestamp".to_string(),
+                    args: vec![],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_get_block_height".to_string(),
+                    args: vec![],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_emit_event".to_string(),
+                    args: vec![ASTNode::I64Const(1), ASTNode::I64Const(2)],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_hash_sha256".to_string(),
+                    args: vec![ASTNode::I64Const(3)],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_call_contract".to_string(),
+                    args: vec![
+                        ASTNode::I64Const(4),
+                        ASTNode::I64Const(5),
+                        ASTNode::I64Const(6),
+                    ],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_read_call_result".to_string(),
+                    args: vec![ASTNode::I64Const(0), ASTNode::I64Const(7)],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_transfer_value".to_string(),
+                    args: vec![ASTNode::I64Const(8), ASTNode::I64Const(9)],
+                },
+                ASTNode::Call {
+                    import_module: "baals".to_string(),
+                    import_name: "baals_revert".to_string(),
+                    args: vec![ASTNode::I64Const(10)],
+                },
+            ],
+            imports: vec![
+                ("baals".to_string(), "baals_get_sender".to_string()),
+                ("baals".to_string(), "baals_get_contract_id".to_string()),
+                ("baals".to_string(), "baals_get_block_timestamp".to_string()),
+                ("baals".to_string(), "baals_get_block_height".to_string()),
+                ("baals".to_string(), "baals_emit_event".to_string()),
+                ("baals".to_string(), "baals_hash_sha256".to_string()),
+                ("baals".to_string(), "baals_call_contract".to_string()),
+                ("baals".to_string(), "baals_read_call_result".to_string()),
+                ("baals".to_string(), "baals_transfer_value".to_string()),
+                ("baals".to_string(), "baals_revert".to_string()),
             ],
         };
 

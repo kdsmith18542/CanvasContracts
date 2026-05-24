@@ -3,6 +3,7 @@ use crate::{
     error::{CanvasError, CanvasResult},
     types::{Event, Gas},
 };
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 pub struct WasmRuntime {
@@ -25,6 +26,13 @@ impl HostState {
     fn new() -> Self {
         Self { events: Vec::new() }
     }
+}
+
+fn hash_bytes_to_i64(bytes: &[u8]) -> i64 {
+    let digest = Sha256::digest(bytes);
+    let mut out = [0u8; 8];
+    out.copy_from_slice(&digest[..8]);
+    i64::from_be_bytes(out)
 }
 
 impl WasmRuntime {
@@ -185,6 +193,96 @@ impl WasmRuntime {
                     let mut map = storage.lock().unwrap();
                     map.insert(key, value);
                 },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap("baals", "baals_get_sender", || -> i64 {
+                hash_bytes_to_i64(b"baals.default_sender")
+            })
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap("baals", "baals_get_contract_id", || -> i64 {
+                hash_bytes_to_i64(b"baals.default_contract")
+            })
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap("baals", "baals_get_block_timestamp", || -> i64 {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0)
+            })
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap("baals", "baals_get_block_height", || -> i64 { 1 })
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "baals",
+                "baals_emit_event",
+                |mut caller: wasmtime::Caller<'_, HostState>,
+                 event_name_hash: i64,
+                 event_data_hash: i64| {
+                    let mut data = HashMap::new();
+                    data.insert(
+                        "event_name_hash".to_string(),
+                        serde_json::json!(event_name_hash),
+                    );
+                    data.insert(
+                        "event_data_hash".to_string(),
+                        serde_json::json!(event_data_hash),
+                    );
+                    caller.data_mut().events.push(Event {
+                        name: format!("event_{}", event_name_hash),
+                        data,
+                        indexed_data: vec![],
+                    });
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap::<_, ()>("baals", "baals_revert", |reason_hash: i64| {
+                panic!("Execution reverted with reason hash {}", reason_hash);
+            })
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap("baals", "baals_hash_sha256", |input_hash: i64| -> i64 {
+                hash_bytes_to_i64(&input_hash.to_be_bytes())
+            })
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "baals",
+                "baals_call_contract",
+                |_contract_hash: i64, _method_hash: i64, _args_hash: i64| {},
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "baals",
+                "baals_read_call_result",
+                |result_handle: i64, field_hash: i64| -> i64 {
+                    result_handle
+                        .wrapping_mul(31)
+                        .wrapping_add(field_hash.wrapping_mul(17))
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap(
+                "baals",
+                "baals_transfer_value",
+                |_recipient_hash: i64, _amount: i64| {},
             )
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
@@ -424,6 +522,95 @@ mod tests {
             .execute_function(&wasm_bytes, "main", vec![serde_json::json!(1)], 1000)
             .unwrap_err();
         assert!(err.to_string().contains("zero-argument functions only"));
+    }
+
+    #[test]
+    fn test_simulation_supports_baals_runtime_import_family() {
+        let config = Config::default();
+        let runtime = WasmRuntime::new(&config).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+
+        let mut types = TypeSection::new();
+        // type 0: main () -> i64
+        types.function([], [ValType::I64]);
+        // type 1: () -> i64
+        types.function([], [ValType::I64]);
+        // type 2: (i64, i64) -> ()
+        types.function([ValType::I64, ValType::I64], []);
+        // type 3: (i64) -> i64
+        types.function([ValType::I64], [ValType::I64]);
+        // type 4: (i64, i64, i64) -> ()
+        types.function([ValType::I64, ValType::I64, ValType::I64], []);
+        // type 5: (i64, i64) -> i64
+        types.function([ValType::I64, ValType::I64], [ValType::I64]);
+        module.section(&types);
+
+        let mut imports = ImportSection::new();
+        imports.import("baals", "baals_get_sender", EntityType::Function(1));
+        imports.import("baals", "baals_get_contract_id", EntityType::Function(1));
+        imports.import(
+            "baals",
+            "baals_get_block_timestamp",
+            EntityType::Function(1),
+        );
+        imports.import("baals", "baals_get_block_height", EntityType::Function(1));
+        imports.import("baals", "baals_emit_event", EntityType::Function(2));
+        imports.import("baals", "baals_hash_sha256", EntityType::Function(3));
+        imports.import("baals", "baals_call_contract", EntityType::Function(4));
+        imports.import("baals", "baals_read_call_result", EntityType::Function(5));
+        imports.import("baals", "baals_transfer_value", EntityType::Function(2));
+        module.section(&imports);
+
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+
+        let mut exports = ExportSection::new();
+        // main local function index = 9 imports + local offset 0
+        exports.export("main", ExportKind::Func, 9);
+        module.section(&exports);
+
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![(1, ValType::I64)]);
+        func.instruction(&Instruction::Call(0)); // get_sender
+        func.instruction(&Instruction::LocalSet(0));
+        func.instruction(&Instruction::Call(1)); // get_contract_id
+        func.instruction(&Instruction::Drop);
+        func.instruction(&Instruction::Call(2)); // get_block_timestamp
+        func.instruction(&Instruction::Drop);
+        func.instruction(&Instruction::Call(3)); // get_block_height
+        func.instruction(&Instruction::Drop);
+        func.instruction(&Instruction::I64Const(123)); // event_name_hash
+        func.instruction(&Instruction::I64Const(456)); // event_data_hash
+        func.instruction(&Instruction::Call(4)); // emit_event
+        func.instruction(&Instruction::LocalGet(0));
+        func.instruction(&Instruction::Call(5)); // hash_sha256
+        func.instruction(&Instruction::LocalSet(0));
+        func.instruction(&Instruction::I64Const(11));
+        func.instruction(&Instruction::I64Const(22));
+        func.instruction(&Instruction::I64Const(33));
+        func.instruction(&Instruction::Call(6)); // call_contract
+        func.instruction(&Instruction::I64Const(0));
+        func.instruction(&Instruction::I64Const(44));
+        func.instruction(&Instruction::Call(7)); // read_call_result
+        func.instruction(&Instruction::Drop);
+        func.instruction(&Instruction::I64Const(55));
+        func.instruction(&Instruction::I64Const(66));
+        func.instruction(&Instruction::Call(8)); // transfer_value
+        func.instruction(&Instruction::LocalGet(0));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+
+        let wasm_bytes = module.finish();
+        let result = runtime
+            .simulate(&wasm_bytes, serde_json::json!({}), 10_000)
+            .unwrap();
+
+        assert!(result.output["result"].as_i64().unwrap_or(0) != 0);
+        assert_eq!(result.events.len(), 1);
     }
 
     #[test]

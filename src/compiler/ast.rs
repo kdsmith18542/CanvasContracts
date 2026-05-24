@@ -191,6 +191,163 @@ impl AST {
                         args: vec![key_expr, value_expr],
                     }
                 }
+                "GetSender" => {
+                    ast.register_import("baals", "baals_get_sender");
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_get_sender".to_string(),
+                        args: vec![],
+                    }
+                }
+                "GetContractId" => {
+                    ast.register_import("baals", "baals_get_contract_id");
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_get_contract_id".to_string(),
+                        args: vec![],
+                    }
+                }
+                "GetBlockTimestamp" => {
+                    ast.register_import("baals", "baals_get_block_timestamp");
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_get_block_timestamp".to_string(),
+                        args: vec![],
+                    }
+                }
+                "GetBlockHeight" => {
+                    ast.register_import("baals", "baals_get_block_height");
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_get_block_height".to_string(),
+                        args: vec![],
+                    }
+                }
+                "EmitEvent" => {
+                    ast.register_import("baals", "baals_emit_event");
+                    let event_name_expr = resolve_storage_key_expr(
+                        "event_name",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let event_data_expr = resolve_input_expr(
+                        "event_data",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_emit_event".to_string(),
+                        args: vec![event_name_expr, event_data_expr],
+                    }
+                }
+                "Revert" => {
+                    ast.register_import("baals", "baals_revert");
+                    let reason_expr = resolve_storage_key_expr(
+                        "reason",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_revert".to_string(),
+                        args: vec![reason_expr],
+                    }
+                }
+                "HashSha256" => {
+                    ast.register_import("baals", "baals_hash_sha256");
+                    let input_expr = resolve_input_expr(
+                        "input",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_hash_sha256".to_string(),
+                        args: vec![input_expr],
+                    }
+                }
+                "CallContract" => {
+                    ast.register_import("baals", "baals_call_contract");
+                    let contract_expr = resolve_storage_key_expr(
+                        "contract_address",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let method_expr = resolve_storage_key_expr(
+                        "method",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let arguments_expr = resolve_input_expr(
+                        "arguments",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_call_contract".to_string(),
+                        args: vec![contract_expr, method_expr, arguments_expr],
+                    }
+                }
+                "ReadCallResult" => {
+                    ast.register_import("baals", "baals_read_call_result");
+                    let result_object_expr = resolve_input_expr(
+                        "result_object",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let field_name_expr = resolve_storage_key_expr(
+                        "field_name",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_read_call_result".to_string(),
+                        args: vec![result_object_expr, field_name_expr],
+                    }
+                }
+                "TransferValue" => {
+                    ast.register_import("baals", "baals_transfer_value");
+                    let recipient_expr = resolve_storage_key_expr(
+                        "recipient",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    let amount_expr = resolve_input_expr(
+                        "amount",
+                        ir,
+                        node_id,
+                        &output_exprs,
+                        &ir_node.properties,
+                    );
+                    ASTNode::Call {
+                        import_module: "baals".to_string(),
+                        import_name: "baals_transfer_value".to_string(),
+                        args: vec![recipient_expr, amount_expr],
+                    }
+                }
                 "If" => ASTNode::Nop,
                 "Start" | "End" => ASTNode::Nop,
                 _ => unreachable!("unsupported node types are rejected above"),
@@ -232,11 +389,47 @@ impl AST {
                         outputs.insert("value".to_string(), finalized_node.clone());
                         outputs.insert("result".to_string(), finalized_node.clone());
                     }
+                    "GetSender" => {
+                        outputs.insert("sender".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "GetContractId" => {
+                        outputs.insert("contract_id".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "GetBlockTimestamp" => {
+                        outputs.insert("timestamp".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "GetBlockHeight" => {
+                        outputs.insert("height".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "HashSha256" => {
+                        outputs.insert("hash".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "ReadCallResult" => {
+                        outputs.insert("value".to_string(), finalized_node.clone());
+                        outputs.insert("result".to_string(), finalized_node.clone());
+                    }
+                    "CallContract" => {
+                        outputs.insert("success".to_string(), node_flow_guard.clone());
+                        outputs.insert("output".to_string(), ASTNode::I64Const(0));
+                        outputs.insert("result".to_string(), ASTNode::I64Const(0));
+                    }
+                    "TransferValue" => {
+                        outputs.insert("success".to_string(), node_flow_guard.clone());
+                        outputs.insert("result".to_string(), node_flow_guard.clone());
+                    }
+                    "EmitEvent" | "Revert" => {}
                     _ => {
                         outputs.insert("result".to_string(), finalized_node.clone());
                     }
                 }
-                if ir_node.node_type != "If" {
+                if ir_node.node_type != "If"
+                    && ir_node.outputs.iter().any(|output| output == "flow_out")
+                {
                     outputs.insert("flow_out".to_string(), node_flow_guard.clone());
                 }
             }
@@ -276,6 +469,16 @@ fn is_compilable_node_type(node_type: &str) -> bool {
             | "If"
             | "ReadStorage"
             | "WriteStorage"
+            | "GetSender"
+            | "GetContractId"
+            | "GetBlockTimestamp"
+            | "GetBlockHeight"
+            | "EmitEvent"
+            | "Revert"
+            | "HashSha256"
+            | "CallContract"
+            | "ReadCallResult"
+            | "TransferValue"
     )
 }
 
@@ -286,11 +489,13 @@ fn maybe_guard_node_for_flow(node_type: &str, node: ASTNode, flow_guard: ASTNode
 
     match node_type {
         // Storage calls are side-effectful and must only run when flow is active.
-        "WriteStorage" => ASTNode::IfElse {
-            condition: Box::new(flow_guard),
-            true_body: vec![node],
-            false_body: Vec::new(),
-        },
+        "WriteStorage" | "EmitEvent" | "Revert" | "CallContract" | "TransferValue" => {
+            ASTNode::IfElse {
+                condition: Box::new(flow_guard),
+                true_body: vec![node],
+                false_body: Vec::new(),
+            }
+        }
         "ReadStorage" => ASTNode::I64IfElse {
             condition: Box::new(flow_guard),
             when_true: Box::new(node),
@@ -467,15 +672,248 @@ mod tests {
         ));
         graph.add_node(VisualNode::new(
             Uuid::new_v4(),
-            "GetSender",
+            "VerifySignature",
             Position::new(150.0, 0.0),
         ));
 
         let ir = GraphIR::from_visual_graph(&graph);
         let err = AST::from_graph_ir(&ir).unwrap_err();
 
-        assert!(err.contains("GetSender"));
+        assert!(err.contains("VerifySignature"));
         assert!(err.contains("not currently compilable"));
+    }
+
+    #[test]
+    fn test_baals_runtime_nodes_compile_to_imported_calls() {
+        let start_id = Uuid::new_v4();
+        let sender_id = Uuid::new_v4();
+        let contract_id_id = Uuid::new_v4();
+        let timestamp_id = Uuid::new_v4();
+        let height_id = Uuid::new_v4();
+        let emit_id = Uuid::new_v4();
+        let hash_id = Uuid::new_v4();
+        let call_id = Uuid::new_v4();
+        let read_call_result_id = Uuid::new_v4();
+        let transfer_id = Uuid::new_v4();
+        let revert_id = Uuid::new_v4();
+
+        let start = VisualNode::new(start_id, "Start", Position::new(0.0, 0.0))
+            .with_outputs(vec![Port::new("flow_out", "Flow Out", ValueType::Flow)]);
+
+        let get_sender = VisualNode::new(sender_id, "GetSender", Position::new(150.0, 0.0))
+            .with_inputs(vec![
+                Port::new("flow_in", "Flow In", ValueType::Flow).required()
+            ])
+            .with_outputs(vec![
+                Port::new("flow_out", "Flow Out", ValueType::Flow),
+                Port::new("sender", "Sender", ValueType::String),
+            ]);
+
+        let get_contract_id =
+            VisualNode::new(contract_id_id, "GetContractId", Position::new(300.0, 0.0))
+                .with_inputs(vec![
+                    Port::new("flow_in", "Flow In", ValueType::Flow).required()
+                ])
+                .with_outputs(vec![
+                    Port::new("flow_out", "Flow Out", ValueType::Flow),
+                    Port::new("contract_id", "Contract ID", ValueType::String),
+                ]);
+
+        let get_timestamp =
+            VisualNode::new(timestamp_id, "GetBlockTimestamp", Position::new(450.0, 0.0))
+                .with_inputs(vec![
+                    Port::new("flow_in", "Flow In", ValueType::Flow).required()
+                ])
+                .with_outputs(vec![
+                    Port::new("flow_out", "Flow Out", ValueType::Flow),
+                    Port::new("timestamp", "Timestamp", ValueType::Integer),
+                ]);
+
+        let get_height = VisualNode::new(height_id, "GetBlockHeight", Position::new(600.0, 0.0))
+            .with_inputs(vec![
+                Port::new("flow_in", "Flow In", ValueType::Flow).required()
+            ])
+            .with_outputs(vec![
+                Port::new("flow_out", "Flow Out", ValueType::Flow),
+                Port::new("height", "Height", ValueType::Integer),
+            ]);
+
+        let emit_event = VisualNode::new(emit_id, "EmitEvent", Position::new(750.0, 0.0))
+            .with_inputs(vec![
+                Port::new("flow_in", "Flow In", ValueType::Flow).required()
+            ])
+            .with_outputs(vec![Port::new("flow_out", "Flow Out", ValueType::Flow)])
+            .with_property("event_name", serde_json::json!("UserUpdated"));
+
+        let hash_sha256 = VisualNode::new(hash_id, "HashSha256", Position::new(900.0, 0.0))
+            .with_inputs(vec![
+                Port::new("flow_in", "Flow In", ValueType::Flow).required()
+            ])
+            .with_outputs(vec![
+                Port::new("flow_out", "Flow Out", ValueType::Flow),
+                Port::new("hash", "Hash", ValueType::Bytes),
+            ])
+            .with_property("input", serde_json::json!("payload"));
+
+        let call_contract = VisualNode::new(call_id, "CallContract", Position::new(1050.0, 0.0))
+            .with_inputs(vec![
+                Port::new("flow_in", "Flow In", ValueType::Flow).required()
+            ])
+            .with_outputs(vec![
+                Port::new("flow_out", "Flow Out", ValueType::Flow),
+                Port::new("success", "Success", ValueType::Boolean),
+                Port::new("output", "Output", ValueType::Any),
+            ])
+            .with_property("contract_address", serde_json::json!("0xabc"))
+            .with_property("method", serde_json::json!("set_value"))
+            .with_property("arguments", serde_json::json!([1, 2, 3]));
+
+        let read_call_result = VisualNode::new(
+            read_call_result_id,
+            "ReadCallResult",
+            Position::new(1200.0, 0.0),
+        )
+        .with_inputs(vec![
+            Port::new("flow_in", "Flow In", ValueType::Flow).required()
+        ])
+        .with_outputs(vec![
+            Port::new("flow_out", "Flow Out", ValueType::Flow),
+            Port::new("value", "Value", ValueType::Any),
+        ])
+        .with_property("field_name", serde_json::json!("value"));
+
+        let transfer_value =
+            VisualNode::new(transfer_id, "TransferValue", Position::new(1350.0, 0.0))
+                .with_inputs(vec![
+                    Port::new("flow_in", "Flow In", ValueType::Flow).required()
+                ])
+                .with_outputs(vec![
+                    Port::new("flow_out", "Flow Out", ValueType::Flow),
+                    Port::new("success", "Success", ValueType::Boolean),
+                ])
+                .with_property("recipient", serde_json::json!("0xdef"))
+                .with_property("amount", serde_json::json!(100));
+
+        let revert = VisualNode::new(revert_id, "Revert", Position::new(1500.0, 0.0))
+            .with_inputs(vec![
+                Port::new("flow_in", "Flow In", ValueType::Flow).required()
+            ])
+            .with_property("reason", serde_json::json!("stop"));
+
+        let mut graph = VisualGraph::new("baals-runtime-compilation");
+        graph.add_node(start);
+        graph.add_node(get_sender);
+        graph.add_node(get_contract_id);
+        graph.add_node(get_timestamp);
+        graph.add_node(get_height);
+        graph.add_node(emit_event);
+        graph.add_node(hash_sha256);
+        graph.add_node(call_contract);
+        graph.add_node(read_call_result);
+        graph.add_node(transfer_value);
+        graph.add_node(revert);
+
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            start_id,
+            "flow_out",
+            sender_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            sender_id,
+            "flow_out",
+            contract_id_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            contract_id_id,
+            "flow_out",
+            timestamp_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            timestamp_id,
+            "flow_out",
+            height_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            height_id,
+            "flow_out",
+            emit_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            emit_id,
+            "flow_out",
+            hash_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            hash_id,
+            "flow_out",
+            call_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            call_id,
+            "flow_out",
+            read_call_result_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            call_id,
+            "output",
+            read_call_result_id,
+            "result_object",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            read_call_result_id,
+            "flow_out",
+            transfer_id,
+            "flow_in",
+        ));
+        graph.add_connection(Connection::new(
+            Uuid::new_v4(),
+            transfer_id,
+            "flow_out",
+            revert_id,
+            "flow_in",
+        ));
+
+        let ir = GraphIR::from_visual_graph(&graph);
+        let ast = AST::from_graph_ir(&ir).expect("BaaLS runtime nodes should be compilable");
+
+        let expected_imports = [
+            ("baals".to_string(), "baals_get_sender".to_string()),
+            ("baals".to_string(), "baals_get_contract_id".to_string()),
+            ("baals".to_string(), "baals_get_block_timestamp".to_string()),
+            ("baals".to_string(), "baals_get_block_height".to_string()),
+            ("baals".to_string(), "baals_emit_event".to_string()),
+            ("baals".to_string(), "baals_hash_sha256".to_string()),
+            ("baals".to_string(), "baals_call_contract".to_string()),
+            ("baals".to_string(), "baals_read_call_result".to_string()),
+            ("baals".to_string(), "baals_transfer_value".to_string()),
+            ("baals".to_string(), "baals_revert".to_string()),
+        ];
+
+        for import in expected_imports {
+            assert!(
+                ast.imports.contains(&import),
+                "Expected import {:?} to be registered",
+                import
+            );
+        }
     }
 
     #[test]
