@@ -88,7 +88,17 @@ impl RuleBasedValidator {
         for rule in &self.validation_rules {
             let result = (rule.check)(graph);
             if !result.passed {
-                let message = format!("{}: {}", rule.name, result.message);
+                let rule_kind = match rule.rule_type {
+                    RuleType::Structure => "structure",
+                    RuleType::Logic => "logic",
+                    RuleType::Security => "security",
+                    RuleType::Performance => "performance",
+                };
+                let impacted = result.affected_nodes.len();
+                let message = format!(
+                    "{} [{}]: {} ({}; impacted_nodes={})",
+                    rule.name, rule_kind, result.message, rule.description, impacted
+                );
                 match rule.severity {
                     RuleSeverity::Info => info.push(message),
                     RuleSeverity::Warning => warnings.push(message),
@@ -102,22 +112,31 @@ impl RuleBasedValidator {
         for rule in &self.security_rules {
             let result = (rule.check)(graph);
             if !result.passed {
-                let message = format!("SECURITY: {} - {}", rule.name, result.message);
-                if let Some(cve) = &result.cve_reference {
-                    let message = format!("{} (CVE: {})", message, cve);
-                    match rule.severity {
-                        RuleSeverity::Info => info.push(message),
-                        RuleSeverity::Warning => warnings.push(message),
-                        RuleSeverity::Error => errors.push(message),
-                        RuleSeverity::Critical => errors.push(format!("CRITICAL: {}", message)),
-                    }
-                } else {
-                    match rule.severity {
-                        RuleSeverity::Info => info.push(message),
-                        RuleSeverity::Warning => warnings.push(message),
-                        RuleSeverity::Error => errors.push(message),
-                        RuleSeverity::Critical => errors.push(format!("CRITICAL: {}", message)),
-                    }
+                let cve = result
+                    .cve_reference
+                    .clone()
+                    .or_else(|| rule.cve_reference.clone());
+                let mut message = format!(
+                    "SECURITY: {} - {} ({})",
+                    rule.name, result.message, rule.description
+                );
+                if let Some(cve_ref) = cve {
+                    message.push_str(&format!(" [CVE: {}]", cve_ref));
+                }
+                if !result.mitigation.is_empty() {
+                    message.push_str(&format!(" mitigation: {}", result.mitigation));
+                }
+                if !result.affected_nodes.is_empty() {
+                    message.push_str(&format!(
+                        " impacted_nodes={}",
+                        result.affected_nodes.len()
+                    ));
+                }
+                match rule.severity {
+                    RuleSeverity::Info => info.push(message),
+                    RuleSeverity::Warning => warnings.push(message),
+                    RuleSeverity::Error => errors.push(message),
+                    RuleSeverity::Critical => errors.push(format!("CRITICAL: {}", message)),
                 }
             }
         }
@@ -267,6 +286,18 @@ impl RuleBasedValidator {
                             affected_nodes: vec![],
                         }
                     }
+                },
+            },
+            // Informational security hygiene reminder.
+            ValidationRule {
+                name: "Security Review Reminder".to_string(),
+                description: "Encourage a final security review before production".to_string(),
+                rule_type: RuleType::Security,
+                severity: RuleSeverity::Info,
+                check: |_graph| ValidationCheckResult {
+                    passed: false,
+                    message: "Run formal security review before mainnet deployment".to_string(),
+                    affected_nodes: vec![],
                 },
             },
         ]

@@ -1228,7 +1228,7 @@ impl Node for EmitDormancyOracleResultNode {
             .get_input(&"token_address".to_string())
             .and_then(|v| v.as_str())
             .unwrap_or("0x0");
-        let label = context
+        let _label = context
             .get_input(&"risk_label".to_string())
             .and_then(|v| v.as_str())
             .unwrap_or("Unknown");
@@ -1306,7 +1306,7 @@ impl NodeFactory {
             "GetBlockTimestamp" => Ok(Box::new(GetBlockTimestampNode)),
             "GetBlockHeight" => Ok(Box::new(GetBlockHeightNode)),
             "EmitEvent" => {
-                let event_name = properties
+                let _event_name = properties
                     .get("event_name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("UnknownEvent")

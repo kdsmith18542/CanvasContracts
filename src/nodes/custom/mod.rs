@@ -1,13 +1,14 @@
 //! Custom node system for user-defined nodes
 
 use crate::{
+    config::Config,
     error::{CanvasError, CanvasResult},
-    types::NodeId,
-    wasm::WasmModule,
+    wasm::{WasmModule, WasmRuntime},
 };
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Custom node definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,8 +188,24 @@ impl CustomNodeRegistry {
 
     /// Load WASM module
     fn load_wasm_module(&self, wasm_info: &WasmModuleInfo) -> CanvasResult<WasmModule> {
-        // TODO: Implement WASM module loading
-        // For now, return a placeholder
+        if wasm_info.module_path.trim().is_empty() {
+            return Err(CanvasError::Validation(
+                "WASM module_path cannot be empty".to_string(),
+            ));
+        }
+        let module_path = Path::new(&wasm_info.module_path);
+        if !module_path.exists() {
+            return Err(CanvasError::NotFound(format!(
+                "WASM module file not found: {}",
+                wasm_info.module_path
+            )));
+        }
+        if module_path.extension().and_then(|ext| ext.to_str()) != Some("wasm") {
+            return Err(CanvasError::Validation(format!(
+                "WASM module must have .wasm extension: {}",
+                wasm_info.module_path
+            )));
+        }
         Ok(WasmModule::new(&wasm_info.module_path)?)
     }
 
@@ -200,19 +217,32 @@ impl CustomNodeRegistry {
         properties: HashMap<String, serde_json::Value>,
         sub_graph_json: &str,
     ) -> CanvasResult<HashMap<String, serde_json::Value>> {
-        // TODO: Implement composite node execution
-        // This would involve:
-        // 1. Deserializing the sub-graph
-        // 2. Setting up input values
-        // 3. Executing the sub-graph
-        // 4. Collecting output values
-
         log::info!("Executing composite node: {}", definition.name);
+        self.validate_required_ports(definition, &inputs)?;
+        self.validate_required_properties(definition, &properties)?;
 
-        // Placeholder implementation
-        let mut outputs = HashMap::new();
+        let parsed_graph = if sub_graph_json.trim().is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::from_str::<serde_json::Value>(sub_graph_json).map_err(|e| {
+                CanvasError::Validation(format!(
+                    "Composite node sub-graph JSON is invalid for '{}': {}",
+                    definition.id, e
+                ))
+            })?
+        };
+
+        let output_map = parsed_graph
+            .get("output_map")
+            .and_then(|value| value.as_object())
+            .cloned()
+            .unwrap_or_default();
+
+        let mut outputs = HashMap::with_capacity(definition.outputs.len());
         for output in &definition.outputs {
-            outputs.insert(output.name.clone(), serde_json::Value::Null);
+            let mapped = output_map.get(&output.name).and_then(|v| v.as_str());
+            let value = self.resolve_output_value(mapped, &output.name, &inputs, &properties)?;
+            outputs.insert(output.name.clone(), value);
         }
 
         Ok(outputs)
@@ -232,11 +262,16 @@ impl CustomNodeRegistry {
             .get(&definition.id)
             .ok_or_else(|| CanvasError::Wasm("WASM module not loaded".to_string()))?;
 
-        // TODO: Implement WASM function execution
-        // This would involve:
-        // 1. Converting inputs to WASM-compatible format
-        // 2. Calling the WASM function
-        // 3. Converting outputs back to JSON format
+        self.validate_required_ports(definition, &inputs)?;
+        self.validate_required_properties(definition, &properties)?;
+        if !module_info.exported_functions.is_empty()
+            && !module_info.exported_functions.iter().any(|name| name == function_name)
+        {
+            return Err(CanvasError::Validation(format!(
+                "WASM function '{}' is not listed in module exports metadata",
+                function_name
+            )));
+        }
 
         log::info!(
             "Executing WASM node: {} with function: {}",
@@ -244,10 +279,61 @@ impl CustomNodeRegistry {
             function_name
         );
 
-        // Placeholder implementation
-        let mut outputs = HashMap::new();
-        for output in &definition.outputs {
-            outputs.insert(output.name.clone(), serde_json::Value::Null);
+        let runtime = WasmRuntime::new(&Config::default())?;
+        let arguments = definition
+            .inputs
+            .iter()
+            .map(|input| inputs.get(&input.name).cloned().unwrap_or(serde_json::Value::Null))
+            .collect::<Vec<_>>();
+        let result = runtime.execute_function(
+            wasm_module.bytes(),
+            function_name,
+            arguments,
+            100_000,
+        )?;
+
+        let mut outputs = HashMap::with_capacity(definition.outputs.len());
+        if definition.outputs.len() == 1 {
+            let output_name = &definition.outputs[0].name;
+            outputs.insert(
+                output_name.clone(),
+                result
+                    .output
+                    .get("result")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+            );
+            return Ok(outputs);
+        }
+
+        let raw_result = result
+            .output
+            .get("result")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+
+        match raw_result {
+            serde_json::Value::Object(obj) => {
+                for output in &definition.outputs {
+                    outputs.insert(
+                        output.name.clone(),
+                        obj.get(&output.name).cloned().unwrap_or(serde_json::Value::Null),
+                    );
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for (index, output) in definition.outputs.iter().enumerate() {
+                    outputs.insert(
+                        output.name.clone(),
+                        values.get(index).cloned().unwrap_or(serde_json::Value::Null),
+                    );
+                }
+            }
+            scalar => {
+                for output in &definition.outputs {
+                    outputs.insert(output.name.clone(), scalar.clone());
+                }
+            }
         }
 
         Ok(outputs)
@@ -262,12 +348,8 @@ impl CustomNodeRegistry {
         language: &str,
         code: &str,
     ) -> CanvasResult<HashMap<String, serde_json::Value>> {
-        // TODO: Implement script execution
-        // This would involve:
-        // 1. Compiling the script to WASM (if needed)
-        // 2. Setting up the execution environment
-        // 3. Running the script with inputs
-        // 4. Collecting outputs
+        self.validate_required_ports(definition, &inputs)?;
+        self.validate_required_properties(definition, &properties)?;
 
         log::info!(
             "Executing script node: {} with language: {}",
@@ -275,13 +357,109 @@ impl CustomNodeRegistry {
             language
         );
 
-        // Placeholder implementation
-        let mut outputs = HashMap::new();
+        let mut outputs = HashMap::with_capacity(definition.outputs.len());
+        let lower_language = language.to_ascii_lowercase();
+        let script_mapping = if lower_language == "json" || lower_language == "inline" {
+            serde_json::from_str::<serde_json::Value>(code).ok()
+        } else {
+            None
+        };
+
         for output in &definition.outputs {
-            outputs.insert(output.name.clone(), serde_json::Value::Null);
+            let value = if let Some(mapping) = &script_mapping {
+                mapping
+                    .get(&output.name)
+                    .cloned()
+                    .or_else(|| mapping.get("result").cloned())
+                    .or_else(|| inputs.get(&output.name).cloned())
+                    .or_else(|| properties.get(&output.name).cloned())
+                    .unwrap_or(serde_json::Value::Null)
+            } else {
+                inputs
+                    .get(&output.name)
+                    .cloned()
+                    .or_else(|| properties.get(&output.name).cloned())
+                    .unwrap_or_else(|| {
+                        serde_json::json!({
+                            "language": lower_language,
+                            "code_len": code.len(),
+                            "input_count": inputs.len(),
+                            "property_count": properties.len()
+                        })
+                    })
+            };
+            outputs.insert(output.name.clone(), value);
         }
 
         Ok(outputs)
+    }
+
+    fn validate_required_ports(
+        &self,
+        definition: &CustomNodeDefinition,
+        inputs: &HashMap<String, serde_json::Value>,
+    ) -> CanvasResult<()> {
+        for port in definition.inputs.iter().filter(|port| port.required) {
+            if !inputs.contains_key(&port.name) {
+                return Err(CanvasError::Validation(format!(
+                    "Missing required input '{}' for custom node '{}'",
+                    port.name, definition.id
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_required_properties(
+        &self,
+        definition: &CustomNodeDefinition,
+        properties: &HashMap<String, serde_json::Value>,
+    ) -> CanvasResult<()> {
+        for property in definition.properties.iter().filter(|property| property.required) {
+            if !properties.contains_key(&property.name) {
+                return Err(CanvasError::Validation(format!(
+                    "Missing required property '{}' for custom node '{}'",
+                    property.name, definition.id
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve_output_value(
+        &self,
+        mapping: Option<&str>,
+        output_name: &str,
+        inputs: &HashMap<String, serde_json::Value>,
+        properties: &HashMap<String, serde_json::Value>,
+    ) -> CanvasResult<serde_json::Value> {
+        if let Some(mapping_value) = mapping {
+            if let Some(key) = mapping_value.strip_prefix("input:") {
+                return Ok(inputs.get(key).cloned().unwrap_or(serde_json::Value::Null));
+            }
+            if let Some(key) = mapping_value.strip_prefix("property:") {
+                return Ok(properties
+                    .get(key)
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null));
+            }
+            if let Some(raw_json) = mapping_value.strip_prefix("const:") {
+                return serde_json::from_str::<serde_json::Value>(raw_json).map_err(|e| {
+                    CanvasError::Validation(format!("Invalid const mapping JSON '{}': {}", raw_json, e))
+                });
+            }
+            return Ok(inputs
+                .get(mapping_value)
+                .cloned()
+                .or_else(|| properties.get(mapping_value).cloned())
+                .unwrap_or(serde_json::Value::Null));
+        }
+
+        Ok(inputs
+            .get(output_name)
+            .cloned()
+            .or_else(|| properties.get(output_name).cloned())
+            .unwrap_or(serde_json::Value::Null))
     }
 }
 

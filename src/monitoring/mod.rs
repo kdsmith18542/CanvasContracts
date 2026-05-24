@@ -2,8 +2,7 @@
 
 use crate::{
     config::Config,
-    error::CanvasResult,
-    types::{Graph, NodeId, NodeType},
+    error::{CanvasError, CanvasResult},
 };
 
 use serde::{Deserialize, Serialize};
@@ -22,11 +21,11 @@ pub struct MetricsCollector {
 
 /// Metrics store
 #[derive(Debug, Clone)]
-struct MetricsStore {
-    counters: HashMap<String, u64>,
-    gauges: HashMap<String, f64>,
-    histograms: HashMap<String, Vec<f64>>,
-    timers: HashMap<String, Vec<Duration>>,
+pub struct MetricsStore {
+    pub counters: HashMap<String, u64>,
+    pub gauges: HashMap<String, f64>,
+    pub histograms: HashMap<String, Vec<f64>>,
+    pub timers: HashMap<String, Vec<Duration>>,
 }
 
 /// Metric event
@@ -104,10 +103,10 @@ pub struct CircuitBreaker {
 
 /// Circuit state
 #[derive(Debug, Clone)]
-enum CircuitState {
-    Closed,   // Normal operation
-    Open,     // Failing, reject requests
-    HalfOpen, // Testing if recovered
+pub enum CircuitState {
+    Closed { failure_count: u32 }, // Normal operation
+    Open { opened_at: Instant, failure_count: u32 }, // Failing, reject requests
+    HalfOpen,                      // Testing if recovered
 }
 
 /// Load balancer for distributed deployment
@@ -115,6 +114,7 @@ pub struct LoadBalancer {
     config: Config,
     nodes: Arc<Mutex<Vec<NodeInfo>>>,
     strategy: LoadBalancingStrategy,
+    selection_counter: Arc<Mutex<usize>>,
 }
 
 /// Node information
@@ -141,6 +141,8 @@ pub struct AutoScalingManager {
     config: Config,
     metrics: Arc<Mutex<MetricsStore>>,
     scaling_rules: Vec<ScalingRule>,
+    current_replicas: Arc<Mutex<u32>>,
+    last_rule_execution: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 /// Scaling rule
@@ -159,6 +161,42 @@ pub enum ScalingAction {
     ScaleUp(u32),
     ScaleDown(u32),
     ScaleTo(u32),
+}
+
+fn read_process_usage() -> (u64, f64) {
+    #[cfg(target_os = "linux")]
+    {
+        // RSS pages from /proc/self/statm converted to bytes.
+        let memory_bytes = std::fs::read_to_string("/proc/self/statm")
+            .ok()
+            .and_then(|content| {
+                let pages = content.split_whitespace().nth(1)?.parse::<u64>().ok()?;
+                Some(pages.saturating_mul(4096))
+            })
+            .unwrap_or(0);
+
+        // utime + stime ticks from /proc/self/stat, used as a monotonic CPU proxy.
+        let cpu_ticks = std::fs::read_to_string("/proc/self/stat")
+            .ok()
+            .and_then(|content| {
+                let fields: Vec<&str> = content.split_whitespace().collect();
+                if fields.len() > 15 {
+                    let utime = fields[13].parse::<f64>().ok()?;
+                    let stime = fields[14].parse::<f64>().ok()?;
+                    Some(utime + stime)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0.0);
+
+        (memory_bytes, cpu_ticks)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        (0, 0.0)
+    }
 }
 
 impl MetricsCollector {
@@ -251,6 +289,11 @@ impl MetricsCollector {
     /// Export metrics to all registered exporters
     pub fn export_metrics(&self) -> CanvasResult<()> {
         let metrics = self.metrics.lock().unwrap();
+        log::debug!(
+            "Exporting metrics with {} exporters at app log level {}",
+            self.exporters.len(),
+            self.config.app.log_level
+        );
 
         for exporter in &self.exporters {
             if let Err(e) = exporter.export(&metrics) {
@@ -278,7 +321,6 @@ impl PrometheusExporter {
 
 impl MetricsExporter for PrometheusExporter {
     fn export(&self, metrics: &MetricsStore) -> CanvasResult<()> {
-        // TODO: Implement actual Prometheus export
         log::info!("Exporting metrics to Prometheus at {}", self.endpoint);
 
         // Format metrics in Prometheus format
@@ -306,7 +348,22 @@ impl MetricsExporter for PrometheusExporter {
             }
         }
 
-        log::debug!("Prometheus metrics:\n{}", prometheus_metrics);
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .post(&self.endpoint)
+            .header("Content-Type", "text/plain; version=0.0.4")
+            .body(prometheus_metrics)
+            .send()
+            .map_err(|e| {
+                CanvasError::Network(format!("Failed to send metrics to Prometheus endpoint: {}", e))
+            })?;
+
+        if !response.status().is_success() {
+            return Err(CanvasError::Network(format!(
+                "Prometheus endpoint returned non-success status {}",
+                response.status()
+            )));
+        }
 
         Ok(())
     }
@@ -329,7 +386,6 @@ impl InfluxDbExporter {
 
 impl MetricsExporter for InfluxDbExporter {
     fn export(&self, metrics: &MetricsStore) -> CanvasResult<()> {
-        // TODO: Implement actual InfluxDB export
         log::info!("Exporting metrics to InfluxDB at {}", self.url);
 
         let timestamp = SystemTime::now()
@@ -355,7 +411,46 @@ impl MetricsExporter for InfluxDbExporter {
             ));
         }
 
-        log::debug!("InfluxDB lines:\n{}", influx_lines.join("\n"));
+        // Timers (milliseconds)
+        for (name, values) in &metrics.timers {
+            if values.is_empty() {
+                continue;
+            }
+            let total_ms: f64 = values.iter().map(|d| d.as_secs_f64() * 1000.0).sum();
+            let avg_ms = total_ms / values.len() as f64;
+            influx_lines.push(format!(
+                "canvas_timers,metric={} avg_ms={},count={} {}",
+                name,
+                avg_ms,
+                values.len(),
+                timestamp
+            ));
+        }
+
+        if influx_lines.is_empty() {
+            return Ok(());
+        }
+
+        let endpoint = format!(
+            "{}/write?db={}",
+            self.url.trim_end_matches('/'),
+            self.database
+        );
+        let client = reqwest::blocking::Client::new();
+        let mut request = client.post(endpoint).body(influx_lines.join("\n"));
+        if !self.token.is_empty() {
+            request = request.header("Authorization", format!("Token {}", self.token));
+        }
+        let response = request.send().map_err(|e| {
+            CanvasError::Network(format!("Failed to send metrics to InfluxDB endpoint: {}", e))
+        })?;
+
+        if !response.status().is_success() {
+            return Err(CanvasError::Network(format!(
+                "InfluxDB endpoint returned non-success status {}",
+                response.status()
+            )));
+        }
 
         Ok(())
     }
@@ -376,25 +471,31 @@ impl PerformanceProfiler {
 
     /// Start profiling an operation
     pub fn start_profile(&self, operation: &str) -> ProfileHandle {
+        let start_memory = self.get_memory_usage();
+        let start_cpu = self.get_cpu_usage();
+        if self.config.development.profiling {
+            log::debug!("Starting profiler for operation '{}'", operation);
+        }
+
         ProfileHandle {
             operation: operation.to_string(),
             start_time: Instant::now(),
-            start_memory: self.get_memory_usage(),
-            start_cpu: self.get_cpu_usage(),
+            start_memory,
+            start_cpu,
             profiler: self.profiles.clone(),
         }
     }
 
     /// Get memory usage
     fn get_memory_usage(&self) -> u64 {
-        // TODO: Implement actual memory usage measurement
-        0
+        let (memory, _) = read_process_usage();
+        memory
     }
 
     /// Get CPU usage
     fn get_cpu_usage(&self) -> f64 {
-        // TODO: Implement actual CPU usage measurement
-        0.0
+        let (_, cpu) = read_process_usage();
+        cpu
     }
 
     /// Get profile data
@@ -429,13 +530,12 @@ impl ProfileHandle {
     /// Finish profiling and record the data
     pub fn finish(self, gas_consumed: u64, metadata: HashMap<String, String>) -> CanvasResult<()> {
         let duration = self.start_time.elapsed();
-        let end_memory = 0; // TODO: Get actual end memory
-        let end_cpu = 0.0; // TODO: Get actual end CPU
+        let (end_memory, end_cpu) = read_process_usage();
 
         let profile_data = ProfileData {
             operation: self.operation.clone(),
             duration,
-            memory_usage: (end_memory as u64).saturating_sub(self.start_memory as u64),
+            memory_usage: end_memory.saturating_sub(self.start_memory),
             cpu_usage: end_cpu - self.start_cpu,
             gas_consumed,
             timestamp: SystemTime::now()
@@ -469,6 +569,9 @@ impl HealthChecker {
     /// Run all health checks
     pub fn check_health(&self) -> Vec<HealthCheckResult> {
         let mut results = Vec::new();
+        if self.config.app.debug {
+            log::debug!("Running {} health checks", self.checks.len());
+        }
 
         for check in &self.checks {
             let result = HealthCheckResult {
@@ -530,7 +633,7 @@ impl CircuitBreaker {
             name: name.to_string(),
             failure_threshold,
             recovery_timeout,
-            state: Arc::new(Mutex::new(CircuitState::Closed)),
+            state: Arc::new(Mutex::new(CircuitState::Closed { failure_count: 0 })),
         }
     }
 
@@ -540,35 +643,56 @@ impl CircuitBreaker {
         F: FnOnce() -> Result<T, E>,
         E: std::fmt::Display,
     {
-        let mut state = self.state.lock().unwrap();
+        let mut state_guard = self.state.lock().unwrap();
 
-        match *state {
-            CircuitState::Open => {
+        if let CircuitState::Open {
+            opened_at,
+            failure_count,
+        } = &*state_guard
+        {
+            if opened_at.elapsed() < self.recovery_timeout {
                 return Err(CircuitBreakerError::CircuitOpen);
             }
-            CircuitState::HalfOpen => {
-                // Try the operation
-                match f() {
-                    Ok(result) => {
-                        *state = CircuitState::Closed;
-                        Ok(result)
-                    }
-                    Err(_) => {
-                        *state = CircuitState::Open;
-                        Err(CircuitBreakerError::CircuitOpen)
-                    }
-                }
+            log::info!(
+                "Circuit breaker '{}' moving to half-open after timeout (failures={})",
+                self.name,
+                failure_count
+            );
+            *state_guard = CircuitState::HalfOpen;
+        }
+        let current_state = state_guard.clone();
+        drop(state_guard);
+
+        match f() {
+            Ok(result) => {
+                let mut state = self.state.lock().unwrap();
+                *state = CircuitState::Closed { failure_count: 0 };
+                Ok(result)
             }
-            CircuitState::Closed => {
-                // Normal operation
-                match f() {
-                    Ok(result) => Ok(result),
-                    Err(e) => {
-                        // TODO: Track failures and open circuit if threshold exceeded
-                        log::warn!("Circuit breaker {}: operation failed: {}", self.name, e);
-                        Err(CircuitBreakerError::OperationFailed(e.to_string()))
+            Err(e) => {
+                let mut state = self.state.lock().unwrap();
+                match current_state {
+                    CircuitState::HalfOpen => {
+                        *state = CircuitState::Open {
+                            opened_at: Instant::now(),
+                            failure_count: self.failure_threshold,
+                        };
                     }
+                    CircuitState::Closed { failure_count } => {
+                        let next = failure_count.saturating_add(1);
+                        if next >= self.failure_threshold {
+                            *state = CircuitState::Open {
+                                opened_at: Instant::now(),
+                                failure_count: next,
+                            };
+                        } else {
+                            *state = CircuitState::Closed { failure_count: next };
+                        }
+                    }
+                    CircuitState::Open { .. } => {}
                 }
+                log::warn!("Circuit breaker {}: operation failed: {}", self.name, e);
+                Err(CircuitBreakerError::OperationFailed(e.to_string()))
             }
         }
     }
@@ -595,6 +719,7 @@ impl LoadBalancer {
             config: config.clone(),
             nodes: Arc::new(Mutex::new(Vec::new())),
             strategy,
+            selection_counter: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -615,6 +740,9 @@ impl LoadBalancer {
     /// Get next node based on strategy
     pub fn get_next_node(&self) -> Option<NodeInfo> {
         let mut nodes = self.nodes.lock().unwrap();
+        if self.config.app.debug {
+            log::debug!("Selecting node from {} candidates", nodes.len());
+        }
 
         // Remove unhealthy nodes
         nodes.retain(|n| matches!(n.health, HealthStatus::Healthy));
@@ -625,29 +753,44 @@ impl LoadBalancer {
 
         match &self.strategy {
             LoadBalancingStrategy::RoundRobin => {
-                // Simple round-robin
-                if let Some(node) = nodes.first() {
-                    let node = node.clone();
-                    nodes.rotate_left(1);
-                    Some(node)
-                } else {
-                    None
-                }
+                let mut counter = self.selection_counter.lock().unwrap();
+                let index = *counter % nodes.len();
+                *counter = counter.wrapping_add(1);
+                nodes.get(index).cloned()
             }
             LoadBalancingStrategy::LeastConnections => {
                 // Return node with lowest load
-                nodes.sort_by(|a, b| a.load.partial_cmp(&b.load).unwrap());
-                nodes.first().cloned()
+                nodes
+                    .iter()
+                    .min_by(|a, b| a.load.total_cmp(&b.load))
+                    .cloned()
             }
             LoadBalancingStrategy::WeightedRoundRobin(weights) => {
-                // TODO: Implement weighted round-robin
-                nodes.first().cloned()
+                let normalized = (0..nodes.len())
+                    .map(|index| weights.get(index).copied().unwrap_or(1.0).max(0.0))
+                    .collect::<Vec<_>>();
+                let total_weight: f64 = normalized.iter().sum();
+                if total_weight <= f64::EPSILON {
+                    return nodes.first().cloned();
+                }
+                let mut counter = self.selection_counter.lock().unwrap();
+                let ticket = (*counter as f64) % total_weight;
+                *counter = counter.wrapping_add(1);
+
+                let mut cumulative = 0.0;
+                for (index, weight) in normalized.iter().enumerate() {
+                    cumulative += *weight;
+                    if ticket < cumulative {
+                        return nodes.get(index).cloned();
+                    }
+                }
+                nodes.last().cloned()
             }
             LoadBalancingStrategy::HealthBased => {
                 // Return healthiest node
                 nodes.sort_by(|a, b| match (&a.health, &b.health) {
                     (HealthStatus::Healthy, HealthStatus::Healthy) => {
-                        a.load.partial_cmp(&b.load).unwrap()
+                        a.load.total_cmp(&b.load)
                     }
                     (HealthStatus::Healthy, _) => std::cmp::Ordering::Less,
                     (_, HealthStatus::Healthy) => std::cmp::Ordering::Greater,
@@ -678,6 +821,8 @@ impl AutoScalingManager {
             config: config.clone(),
             metrics,
             scaling_rules: Vec::new(),
+            current_replicas: Arc::new(Mutex::new(1)),
+            last_rule_execution: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -689,12 +834,18 @@ impl AutoScalingManager {
     /// Evaluate scaling rules
     pub fn evaluate_scaling(&self) -> CanvasResult<Vec<ScalingAction>> {
         let metrics = self.metrics.lock().unwrap();
+        let now = Instant::now();
+        let mut last_execution = self.last_rule_execution.lock().unwrap();
         let mut actions = Vec::new();
 
         for rule in &self.scaling_rules {
             if let Some(value) = metrics.gauges.get(&rule.metric) {
-                if *value > rule.threshold {
+                let cooldown_ok = last_execution
+                    .get(&rule.name)
+                    .map_or(true, |last| now.duration_since(*last) >= rule.cooldown);
+                if *value > rule.threshold && cooldown_ok {
                     actions.push(rule.action.clone());
+                    last_execution.insert(rule.name.clone(), now);
                 }
             }
         }
@@ -704,24 +855,34 @@ impl AutoScalingManager {
 
     /// Execute scaling actions
     pub fn execute_scaling(&self, actions: &[ScalingAction]) -> CanvasResult<()> {
+        let mut replicas = self.current_replicas.lock().unwrap();
         for action in actions {
             match action {
                 ScalingAction::ScaleUp(count) => {
                     log::info!("Scaling up by {} instances", count);
-                    // TODO: Implement actual scaling up
+                    *replicas = replicas.saturating_add(*count);
                 }
                 ScalingAction::ScaleDown(count) => {
                     log::info!("Scaling down by {} instances", count);
-                    // TODO: Implement actual scaling down
+                    *replicas = replicas.saturating_sub(*count).max(1);
                 }
                 ScalingAction::ScaleTo(count) => {
                     log::info!("Scaling to {} instances", count);
-                    // TODO: Implement actual scaling to target
+                    *replicas = (*count).max(1);
                 }
             }
         }
+        drop(replicas);
+
+        if self.config.app.debug {
+            log::debug!("Autoscaling actions executed: {}", actions.len());
+        }
 
         Ok(())
+    }
+
+    pub fn current_replicas(&self) -> u32 {
+        *self.current_replicas.lock().unwrap()
     }
 }
 
@@ -730,7 +891,6 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore] // TODO: fix metrics storage
     async fn test_metrics_collector() {
         let config = Config::default();
         let collector = MetricsCollector::new(&config).unwrap();
@@ -741,6 +901,7 @@ mod tests {
         collector
             .record_timer("test_timer", Duration::from_millis(100))
             .unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
         let metrics = collector.get_metrics();
         assert_eq!(metrics.counters.get("test_counter"), Some(&1));
@@ -787,16 +948,21 @@ mod tests {
 
     #[test]
     fn test_circuit_breaker() {
-        let breaker = CircuitBreaker::new("test", 3, Duration::from_secs(60));
+        let breaker = CircuitBreaker::new("test", 2, Duration::from_millis(10));
 
         // Test successful operation
         let result = breaker.execute(|| Ok::<i32, String>(42));
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
 
-        // Test failed operation
-        let result = breaker.execute(|| Err::<i32, String>("test error".to_string()));
-        assert!(result.is_err());
+        // Two failures open the circuit.
+        assert!(breaker
+            .execute(|| Err::<i32, String>("test error 1".to_string()))
+            .is_err());
+        assert!(breaker
+            .execute(|| Err::<i32, String>("test error 2".to_string()))
+            .is_err());
+        assert!(matches!(breaker.get_state(), CircuitState::Open { .. }));
     }
 
     #[test]
@@ -816,5 +982,25 @@ mod tests {
 
         let next_node = balancer.get_next_node();
         assert!(next_node.is_some());
+    }
+
+    #[test]
+    fn test_auto_scaling_manager_executes_actions() {
+        let config = Config::default();
+        let metrics = Arc::new(Mutex::new(MetricsStore {
+            counters: HashMap::new(),
+            gauges: HashMap::new(),
+            histograms: HashMap::new(),
+            timers: HashMap::new(),
+        }));
+        let manager = AutoScalingManager::new(&config, metrics);
+        manager
+            .execute_scaling(&[
+                ScalingAction::ScaleUp(2),
+                ScalingAction::ScaleDown(1),
+                ScalingAction::ScaleTo(5),
+            ])
+            .unwrap();
+        assert_eq!(manager.current_replicas(), 5);
     }
 }

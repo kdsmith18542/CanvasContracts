@@ -3,7 +3,7 @@
 use crate::{
     error::{CanvasError, CanvasResult},
     nodes::custom::CustomNodeDefinition,
-    types::{Graph, Node, NodeId},
+    types::Graph,
 };
 
 use chrono::{DateTime, Utc};
@@ -188,6 +188,66 @@ impl MarketplaceClient {
         self
     }
 
+    fn endpoint(&self, path: &str) -> String {
+        format!(
+            "{}/{}",
+            self.api_url.trim_end_matches('/'),
+            path.trim_start_matches('/')
+        )
+    }
+
+    fn is_mock_backend(&self) -> bool {
+        self.api_url.starts_with("mock://")
+    }
+
+    fn sample_item(&self, id: &str, name: &str) -> MarketplaceItem {
+        MarketplaceItem {
+            id: id.to_string(),
+            name: name.to_string(),
+            description: "Mock marketplace item".to_string(),
+            author: "mock_author".to_string(),
+            version: "1.0.0".to_string(),
+            item_type: MarketplaceItemType::CustomNode,
+            tags: vec!["mock".to_string()],
+            rating: 4.0,
+            downloads: 0,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            price: None,
+            license: "MIT".to_string(),
+            dependencies: Vec::new(),
+            compatibility: vec!["0.1.0".to_string()],
+            size_bytes: 0,
+            hash: "mock_hash".to_string(),
+        }
+    }
+
+    async fn send_request(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> CanvasResult<reqwest::Response> {
+        let request = if let Some(api_key) = &self.api_key {
+            request.bearer_auth(api_key)
+        } else {
+            request
+        };
+
+        let response = request.send().await.map_err(|e| {
+            CanvasError::Network(format!("Marketplace request to {} failed: {}", self.api_url, e))
+        })?;
+
+        if response.status().is_success() {
+            Ok(response)
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            Err(CanvasError::Network(format!(
+                "Marketplace API error {}: {}",
+                status, body
+            )))
+        }
+    }
+
     /// Search for marketplace items
     pub async fn search_items(
         &self,
@@ -196,11 +256,65 @@ impl MarketplaceClient {
         page: u32,
         limit: u32,
     ) -> CanvasResult<Vec<MarketplaceItem>> {
-        // TODO: Implement actual API call
         log::info!("Searching marketplace for: {}", query);
+        if self.is_mock_backend() {
+            let item = self.sample_item("mock-item-1", query);
+            return Ok(vec![item]);
+        }
 
-        // Mock response for now
-        Ok(vec![])
+        let client = reqwest::Client::new();
+        let mut params: Vec<(&str, String)> = vec![
+            ("q", query.to_string()),
+            ("page", page.to_string()),
+            ("limit", limit.to_string()),
+        ];
+        if let Some(item_type) = &filters.item_type {
+            params.push(("item_type", format!("{:?}", item_type)));
+        }
+        if !filters.tags.is_empty() {
+            params.push(("tags", filters.tags.join(",")));
+        }
+        if let Some(min_rating) = filters.min_rating {
+            params.push(("min_rating", min_rating.to_string()));
+        }
+        if let Some(max_price) = filters.max_price {
+            params.push(("max_price", max_price.to_string()));
+        }
+        if filters.free_only {
+            params.push(("free_only", "true".to_string()));
+        }
+        if let Some(author) = &filters.author {
+            params.push(("author", author.clone()));
+        }
+        if let Some(compatibility) = &filters.compatibility {
+            params.push(("compatibility", compatibility.clone()));
+        }
+        if let Some(difficulty) = &filters.difficulty {
+            params.push(("difficulty", difficulty.clone()));
+        }
+
+        let response = self
+            .send_request(client.get(self.endpoint("/items/search")).query(&params))
+            .await?;
+        let payload: serde_json::Value = response.json().await.map_err(|e| {
+            CanvasError::Serialization(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse marketplace search response: {}", e),
+            )))
+        })?;
+
+        if payload.is_array() {
+            serde_json::from_value(payload).map_err(CanvasError::from)
+        } else if let Some(items) = payload.get("items") {
+            serde_json::from_value(items.clone()).map_err(CanvasError::from)
+        } else {
+            Err(CanvasError::Serialization(serde_json::Error::io(
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Marketplace search response missing 'items' payload",
+                ),
+            )))
+        }
     }
 
     /// Get item details
@@ -209,29 +323,21 @@ impl MarketplaceClient {
         if let Some(item) = self.cache.get(item_id) {
             return Ok(item.clone());
         }
-
-        // TODO: Implement actual API call
         log::info!("Fetching item details for: {}", item_id);
 
-        // Mock response for now
-        let item = MarketplaceItem {
-            id: item_id.to_string(),
-            name: "Sample Item".to_string(),
-            description: "A sample marketplace item".to_string(),
-            author: "sample_author".to_string(),
-            version: "1.0.0".to_string(),
-            item_type: MarketplaceItemType::CustomNode,
-            tags: vec!["sample".to_string()],
-            rating: 4.5,
-            downloads: 100,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-            price: None,
-            license: "MIT".to_string(),
-            dependencies: vec![],
-            compatibility: vec!["1.0.0".to_string()],
-            size_bytes: 1024,
-            hash: "sample_hash".to_string(),
+        let item = if self.is_mock_backend() {
+            self.sample_item(item_id, "Mock Item")
+        } else {
+            let client = reqwest::Client::new();
+            let response = self
+                .send_request(client.get(self.endpoint(&format!("/items/{}", item_id))))
+                .await?;
+            response.json::<MarketplaceItem>().await.map_err(|e| {
+                CanvasError::Serialization(serde_json::Error::io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to parse marketplace item response: {}", e),
+                )))
+            })?
         };
 
         // Cache the item
@@ -241,11 +347,18 @@ impl MarketplaceClient {
 
     /// Download item content
     pub async fn download_item(&self, item_id: &str) -> CanvasResult<Vec<u8>> {
-        // TODO: Implement actual download
         log::info!("Downloading item: {}", item_id);
+        if self.is_mock_backend() {
+            return Ok(vec![0u8; 32]);
+        }
 
-        // Mock response for now
-        Ok(vec![0u8; 1024])
+        let client = reqwest::Client::new();
+        let response = self
+            .send_request(client.get(self.endpoint(&format!("/items/{}/download", item_id))))
+            .await?;
+        response.bytes().await.map(|bytes| bytes.to_vec()).map_err(|e| {
+            CanvasError::Network(format!("Failed to read downloaded marketplace content: {}", e))
+        })
     }
 
     /// Upload item to marketplace
@@ -254,33 +367,70 @@ impl MarketplaceClient {
         item: &MarketplaceItem,
         content: &[u8],
     ) -> CanvasResult<String> {
-        // TODO: Implement actual upload
         log::info!("Uploading item: {}", item.name);
+        if self.is_mock_backend() {
+            return Ok(format!("mock-upload-{}", item.id));
+        }
 
-        // Mock response for now
-        Ok("uploaded_item_id".to_string())
+        let client = reqwest::Client::new();
+        let payload = serde_json::json!({
+            "metadata": item,
+            "content_hex": hex::encode(content),
+        });
+        let response = self
+            .send_request(client.post(self.endpoint("/items/upload")).json(&payload))
+            .await?;
+        let body: serde_json::Value = response.json().await.map_err(|e| {
+            CanvasError::Serialization(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse upload response: {}", e),
+            )))
+        })?;
+
+        if let Some(id) = body.get("id").and_then(|v| v.as_str()) {
+            Ok(id.to_string())
+        } else if let Some(id) = body.get("item_id").and_then(|v| v.as_str()) {
+            Ok(id.to_string())
+        } else {
+            Err(CanvasError::Serialization(serde_json::Error::io(
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Upload response missing item id",
+                ),
+            )))
+        }
     }
 
     /// Get user profile
     pub async fn get_user_profile(&self, username: &str) -> CanvasResult<UserProfile> {
-        // TODO: Implement actual API call
         log::info!("Fetching user profile for: {}", username);
+        if self.is_mock_backend() {
+            return Ok(UserProfile {
+                username: username.to_string(),
+                display_name: "Mock User".to_string(),
+                email: "mock@example.com".to_string(),
+                avatar_url: None,
+                bio: "A mock user profile".to_string(),
+                location: None,
+                website: None,
+                social_links: HashMap::new(),
+                reputation_score: 4.5,
+                items_published: 0,
+                total_downloads: 0,
+                member_since: Utc::now(),
+                verified: false,
+            });
+        }
 
-        // Mock response for now
-        Ok(UserProfile {
-            username: username.to_string(),
-            display_name: "Sample User".to_string(),
-            email: "sample@example.com".to_string(),
-            avatar_url: None,
-            bio: "A sample user".to_string(),
-            location: None,
-            website: None,
-            social_links: HashMap::new(),
-            reputation_score: 4.5,
-            items_published: 5,
-            total_downloads: 1000,
-            member_since: Utc::now(),
-            verified: false,
+        let client = reqwest::Client::new();
+        let response = self
+            .send_request(client.get(self.endpoint(&format!("/users/{}", username))))
+            .await?;
+        response.json::<UserProfile>().await.map_err(|e| {
+            CanvasError::Serialization(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse user profile response: {}", e),
+            )))
         })
     }
 
@@ -291,27 +441,76 @@ impl MarketplaceClient {
         page: u32,
         limit: u32,
     ) -> CanvasResult<Vec<Review>> {
-        // TODO: Implement actual API call
         log::info!("Fetching reviews for item: {}", item_id);
+        if self.is_mock_backend() {
+            return Ok(Vec::new());
+        }
 
-        // Mock response for now
-        Ok(vec![])
+        let client = reqwest::Client::new();
+        let response = self
+            .send_request(
+                client
+                    .get(self.endpoint(&format!("/items/{}/reviews", item_id)))
+                    .query(&[("page", page.to_string()), ("limit", limit.to_string())]),
+            )
+            .await?;
+        let payload: serde_json::Value = response.json().await.map_err(|e| {
+            CanvasError::Serialization(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse reviews response: {}", e),
+            )))
+        })?;
+
+        if payload.is_array() {
+            serde_json::from_value(payload).map_err(CanvasError::from)
+        } else if let Some(items) = payload.get("reviews") {
+            serde_json::from_value(items.clone()).map_err(CanvasError::from)
+        } else {
+            Err(CanvasError::Serialization(serde_json::Error::io(
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid reviews payload"),
+            )))
+        }
     }
 
     /// Submit a review
     pub async fn submit_review(&self, review: &Review) -> CanvasResult<()> {
-        // TODO: Implement actual API call
         log::info!("Submitting review for item: {}", review.item_id);
+        if self.is_mock_backend() {
+            return Ok(());
+        }
+        let client = reqwest::Client::new();
+        self.send_request(
+            client
+                .post(self.endpoint(&format!("/items/{}/reviews", review.item_id)))
+                .json(review),
+        )
+        .await?;
         Ok(())
     }
 
     /// Get trending items
     pub async fn get_trending_items(&self, limit: u32) -> CanvasResult<Vec<MarketplaceItem>> {
-        // TODO: Implement actual API call
         log::info!("Fetching trending items");
+        if self.is_mock_backend() {
+            return Ok((0..limit)
+                .map(|i| self.sample_item(&format!("trend-{}", i), &format!("Trending {}", i)))
+                .collect());
+        }
 
-        // Mock response for now
-        Ok(vec![])
+        let client = reqwest::Client::new();
+        let response = self
+            .send_request(
+                client
+                    .get(self.endpoint("/items/trending"))
+                    .query(&[("limit", limit.to_string())]),
+            )
+            .await?;
+        response.json::<Vec<MarketplaceItem>>().await.map_err(|e| {
+            CanvasError::Serialization(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse trending items response: {}", e),
+            )))
+        })
     }
 
     /// Get recommended items
@@ -320,11 +519,32 @@ impl MarketplaceClient {
         user_id: &str,
         limit: u32,
     ) -> CanvasResult<Vec<MarketplaceItem>> {
-        // TODO: Implement actual API call
         log::info!("Fetching recommended items for user: {}", user_id);
+        if self.is_mock_backend() {
+            return Ok((0..limit)
+                .map(|i| {
+                    self.sample_item(
+                        &format!("recommended-{}-{}", user_id, i),
+                        &format!("Recommended {}", i),
+                    )
+                })
+                .collect());
+        }
 
-        // Mock response for now
-        Ok(vec![])
+        let client = reqwest::Client::new();
+        let response = self
+            .send_request(
+                client
+                    .get(self.endpoint(&format!("/users/{}/recommendations", user_id)))
+                    .query(&[("limit", limit.to_string())]),
+            )
+            .await?;
+        response.json::<Vec<MarketplaceItem>>().await.map_err(|e| {
+            CanvasError::Serialization(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse recommended items response: {}", e),
+            )))
+        })
     }
 }
 

@@ -5,7 +5,7 @@ use crate::{
     config::Config,
     error::{CanvasError, CanvasResult},
     nodes::custom::{CustomNodeBuilder, CustomNodeDefinition},
-    types::{Connection, NodeId, NodeType, Position, ValueType, VisualGraph, VisualNode},
+    types::{Connection, NodeId, NodeType, Position, VisualGraph, VisualNode},
     wasm::WasmRuntime,
 };
 
@@ -362,7 +362,7 @@ pub enum OptimizationImpact {
 
 /// Main SDK struct
 pub struct CanvasSdk {
-    config: SdkConfig,
+    _config: SdkConfig,
     plugin_registry: PluginRegistry,
     compiler: Compiler,
     runtime: WasmRuntime,
@@ -380,7 +380,7 @@ impl CanvasSdk {
         let runtime = WasmRuntime::new(&Config::default())?;
 
         Ok(Self {
-            config,
+            _config: config,
             plugin_registry,
             compiler,
             runtime,
@@ -578,7 +578,7 @@ mod tests {
             max_cache_size: 1000,
         };
 
-        let mut registry = PluginRegistry::new(config);
+        let registry = PluginRegistry::new(config);
         assert_eq!(registry.get_all_plugins().len(), 0);
     }
 }

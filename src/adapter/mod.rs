@@ -280,7 +280,7 @@ impl ChronoNodeClient for MockChronoNodeClient {
         &self,
         chain_id: &str,
         from: u64,
-        to: u64,
+        _to: u64,
     ) -> CanvasResult<serde_json::Value> {
         Ok(serde_json::json!([
             {

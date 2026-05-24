@@ -124,8 +124,8 @@ impl PatternRecognitionEngine {
         let mut total_required = pattern.node_sequence.len();
 
         // Check for required node sequence
-        for (i, required_type) in pattern.node_sequence.iter().enumerate() {
-            if let Some(_) = nodes.iter().find(|node| node.node_type == *required_type) {
+        for required_type in &pattern.node_sequence {
+            if nodes.iter().any(|node| node.node_type == *required_type) {
                 matches += 1;
             }
         }
@@ -136,6 +136,17 @@ impl PatternRecognitionEngine {
                 matches += 1;
                 total_required += 1;
             }
+        }
+
+        // Optional nodes increase confidence but are not strictly required.
+        let optional_matches = pattern
+            .optional_nodes
+            .iter()
+            .filter(|optional_type| nodes.iter().any(|node| node.node_type == **optional_type))
+            .count();
+        if !pattern.optional_nodes.is_empty() {
+            matches += optional_matches;
+            total_required += pattern.optional_nodes.len();
         }
 
         if total_required == 0 {

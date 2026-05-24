@@ -2,7 +2,7 @@
 
 use crate::{
     config::Config,
-    error::{CanvasError, CanvasResult},
+    error::CanvasResult,
     types::{NodeId, NodeType, VisualGraph},
 };
 
@@ -16,7 +16,7 @@ use validator::RuleBasedValidator;
 
 /// AI Assistant for analyzing and optimizing contracts
 pub struct AiAssistant {
-    config: Config,
+    _config: Config,
     pattern_engine: PatternRecognitionEngine,
     validator: RuleBasedValidator,
     optimizer: OptimizationEngine,
@@ -134,7 +134,7 @@ impl AiAssistant {
     /// Create a new AI assistant
     pub fn new(config: &Config) -> CanvasResult<Self> {
         Ok(Self {
-            config: config.clone(),
+            _config: config.clone(),
             pattern_engine: PatternRecognitionEngine::new(),
             validator: RuleBasedValidator::new(),
             optimizer: OptimizationEngine::new(),
@@ -189,7 +189,7 @@ impl AiAssistant {
     /// Generate suggestions based on analysis
     fn generate_suggestions(
         &self,
-        graph: &VisualGraph,
+        _graph: &VisualGraph,
         patterns: &[ContractPattern],
         anti_patterns: &[AntiPattern],
     ) -> CanvasResult<Vec<String>> {
@@ -223,7 +223,11 @@ impl AiAssistant {
     }
 
     /// Analyze context around a node
-    fn analyze_context(&self, graph: &VisualGraph, node_id: NodeId) -> CanvasResult<NodeContext> {
+    fn analyze_context(
+        &self,
+        _graph: &VisualGraph,
+        _node_id: NodeId,
+    ) -> CanvasResult<NodeContext> {
         // TODO: Implement context analysis
         // For now, return a basic context
 

@@ -2,8 +2,8 @@
 
 use crate::{
     error::{CanvasError, CanvasResult},
-    marketplace::{MarketplaceItem, UserProfile},
-    types::{Graph, Node, NodeId},
+    marketplace::UserProfile,
+    types::Graph,
 };
 
 use chrono::{DateTime, Utc};
@@ -233,7 +233,7 @@ impl CommunityManager {
         &mut self,
         username: String,
         email: String,
-        password_hash: String,
+        _password_hash: String,
     ) -> CanvasResult<String> {
         // Check if username already exists
         if self.users.values().any(|u| u.username == username) {

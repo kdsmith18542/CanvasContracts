@@ -47,6 +47,79 @@ fn mix_tagged_i64(tag: &str, values: &[i64]) -> i64 {
     i64::from_be_bytes(out)
 }
 
+fn json_to_wasm_value(
+    value: &serde_json::Value,
+    expected_type: wasmtime::ValType,
+) -> CanvasResult<wasmtime::Val> {
+    match expected_type {
+        wasmtime::ValType::I32 => {
+            let val = value
+                .as_i64()
+                .ok_or_else(|| CanvasError::Type("Expected integer argument for i32".to_string()))?;
+            let casted = i32::try_from(val).map_err(|_| {
+                CanvasError::Type(format!("Value {} does not fit into i32 argument", val))
+            })?;
+            Ok(wasmtime::Val::I32(casted))
+        }
+        wasmtime::ValType::I64 => {
+            let val = value
+                .as_i64()
+                .ok_or_else(|| CanvasError::Type("Expected integer argument for i64".to_string()))?;
+            Ok(wasmtime::Val::I64(val))
+        }
+        wasmtime::ValType::F32 => {
+            let val = value
+                .as_f64()
+                .ok_or_else(|| CanvasError::Type("Expected numeric argument for f32".to_string()))?;
+            Ok(wasmtime::Val::F32((val as f32).to_bits()))
+        }
+        wasmtime::ValType::F64 => {
+            let val = value
+                .as_f64()
+                .ok_or_else(|| CanvasError::Type("Expected numeric argument for f64".to_string()))?;
+            Ok(wasmtime::Val::F64(val.to_bits()))
+        }
+        other => Err(CanvasError::Type(format!(
+            "Unsupported wasm argument type: {:?}",
+            other
+        ))),
+    }
+}
+
+fn default_wasm_result_value(result_type: wasmtime::ValType) -> CanvasResult<wasmtime::Val> {
+    match result_type {
+        wasmtime::ValType::I32 => Ok(wasmtime::Val::I32(0)),
+        wasmtime::ValType::I64 => Ok(wasmtime::Val::I64(0)),
+        wasmtime::ValType::F32 => Ok(wasmtime::Val::F32(0f32.to_bits())),
+        wasmtime::ValType::F64 => Ok(wasmtime::Val::F64(0f64.to_bits())),
+        other => Err(CanvasError::Type(format!(
+            "Unsupported wasm result type: {:?}",
+            other
+        ))),
+    }
+}
+
+fn wasm_value_to_json(value: &wasmtime::Val) -> CanvasResult<serde_json::Value> {
+    match value {
+        wasmtime::Val::I32(v) => Ok(serde_json::json!(v)),
+        wasmtime::Val::I64(v) => Ok(serde_json::json!(v)),
+        wasmtime::Val::F32(bits) => Ok(serde_json::json!(f32::from_bits(*bits))),
+        wasmtime::Val::F64(bits) => Ok(serde_json::json!(f64::from_bits(*bits))),
+        other => Err(CanvasError::Type(format!(
+            "Unsupported wasm output value: {:?}",
+            other
+        ))),
+    }
+}
+
+fn map_wasm_execution_error(function_name: &str, error: wasmtime::Error) -> CanvasError {
+    let message = error.to_string();
+    if message.contains("Execution reverted with reason hash") {
+        return CanvasError::ExecutionError(message);
+    }
+    CanvasError::Wasm(format!("Execution of '{}' failed: {}", function_name, message))
+}
+
 impl WasmRuntime {
     pub fn new(_config: &Config) -> CanvasResult<Self> {
         let mut config_wasm = wasmtime::Config::new();
@@ -111,12 +184,6 @@ impl WasmRuntime {
         arguments: Vec<serde_json::Value>,
         gas_limit: Gas,
     ) -> CanvasResult<SimulationResult> {
-        if !arguments.is_empty() {
-            return Err(CanvasError::Wasm(
-                "execute_function currently supports zero-argument functions only".to_string(),
-            ));
-        }
-
         let start_time = std::time::Instant::now();
 
         let module = wasmtime::Module::new(&self.engine, wasm_bytes)
@@ -138,13 +205,44 @@ impl WasmRuntime {
             .map_err(|e| CanvasError::Wasm(format!("Failed to get fuel: {}", e)))?;
 
         let func = instance
-            .get_typed_func::<(), i64>(&mut store, function_name)
-            .map_err(|e| {
-                CanvasError::Wasm(format!("Failed to get function '{}': {}", function_name, e))
-            })?;
-        let result = func.call(&mut store, ()).map_err(|e| {
-            CanvasError::Wasm(format!("Execution of '{}' failed: {}", function_name, e))
-        })?;
+            .get_func(&mut store, function_name)
+            .ok_or_else(|| CanvasError::Wasm(format!("Function '{}' not found", function_name)))?;
+        let function_type = func.ty(&store);
+        let expected_params = function_type.params().collect::<Vec<_>>();
+        if expected_params.len() != arguments.len() {
+            return Err(CanvasError::Validation(format!(
+                "Function '{}' expects {} arguments but received {}",
+                function_name,
+                expected_params.len(),
+                arguments.len()
+            )));
+        }
+        let params = arguments
+            .iter()
+            .zip(expected_params.iter())
+            .map(|(arg, expected)| json_to_wasm_value(arg, expected.clone()))
+            .collect::<CanvasResult<Vec<_>>>()?;
+
+        let expected_results = function_type.results().collect::<Vec<_>>();
+        let mut results = expected_results
+            .iter()
+            .map(|result_type| default_wasm_result_value(result_type.clone()))
+            .collect::<CanvasResult<Vec<_>>>()?;
+
+        func.call(&mut store, &params, &mut results)
+            .map_err(|e| map_wasm_execution_error(function_name, e))?;
+
+        let output_value = if results.is_empty() {
+            serde_json::Value::Null
+        } else if results.len() == 1 {
+            wasm_value_to_json(&results[0])?
+        } else {
+            let mut output_items = Vec::with_capacity(results.len());
+            for result in &results {
+                output_items.push(wasm_value_to_json(result)?);
+            }
+            serde_json::Value::Array(output_items)
+        };
 
         let fuel_after = store.get_fuel().unwrap_or(0);
         let gas_used = fuel_before.saturating_sub(fuel_after);
@@ -154,7 +252,7 @@ impl WasmRuntime {
         let events = host_state.events;
 
         Ok(SimulationResult {
-            output: serde_json::json!({"result": result}),
+            output: serde_json::json!({"result": output_value}),
             gas_used,
             events,
             execution_time,
@@ -259,8 +357,22 @@ impl WasmRuntime {
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
         linker
-            .func_wrap::<_, ()>("baals", "baals_revert", |reason_hash: i64| {
-                panic!("Execution reverted with reason hash {}", reason_hash);
+            .func_wrap::<_, Result<(), wasmtime::Error>>(
+                "baals",
+                "baals_revert",
+                |reason_hash: i64| {
+                    Err(wasmtime::Error::msg(format!(
+                        "Execution reverted with reason hash {}",
+                        reason_hash
+                    )))
+                },
+            )
+            .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
+
+        linker
+            .func_wrap("baals", "baals_revert_with_reason", |reason_hash: i64| -> i64 {
+                // Auxiliary non-trapping API for modules that prefer explicit status checks.
+                reason_hash
             })
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
@@ -721,14 +833,15 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_function_rejects_arguments_for_now() {
+    fn test_execute_function_supports_arguments() {
         let config = Config::default();
         let runtime = WasmRuntime::new(&config).unwrap();
 
         use wasm_encoder::*;
         let mut module = Module::new();
         let mut types = TypeSection::new();
-        types.function([], [ValType::I64]);
+        // type 0: add(i64, i64) -> i64
+        types.function([ValType::I64, ValType::I64], [ValType::I64]);
         module.section(&types);
         let mut funcs = FunctionSection::new();
         funcs.function(0);
@@ -738,16 +851,28 @@ mod tests {
         module.section(&exports);
         let mut codes = CodeSection::new();
         let mut func = Function::new(vec![]);
-        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::LocalGet(0));
+        func.instruction(&Instruction::LocalGet(1));
+        func.instruction(&Instruction::I64Add);
         func.instruction(&Instruction::End);
         codes.function(&func);
         module.section(&codes);
         let wasm_bytes = module.finish();
 
+        let result = runtime
+            .execute_function(
+                &wasm_bytes,
+                "main",
+                vec![serde_json::json!(2), serde_json::json!(40)],
+                1000,
+            )
+            .unwrap();
+        assert_eq!(result.output, serde_json::json!({"result": 42}));
+
         let err = runtime
             .execute_function(&wasm_bytes, "main", vec![serde_json::json!(1)], 1000)
             .unwrap_err();
-        assert!(err.to_string().contains("zero-argument functions only"));
+        assert!(err.to_string().contains("expects 2 arguments"));
     }
 
     #[test]
@@ -1145,11 +1270,34 @@ mod tests {
     }
 }
 
-/// Stub WasmModule type for custom nodes compatibility
-pub struct WasmModule;
+/// WASM module wrapper for custom node execution.
+pub struct WasmModule {
+    path: String,
+    bytes: Vec<u8>,
+}
 
 impl WasmModule {
-    pub fn new(_path: &str) -> CanvasResult<Self> {
-        Ok(Self)
+    pub fn new(path: &str) -> CanvasResult<Self> {
+        let bytes = std::fs::read(path).map_err(|e| {
+            CanvasError::Io(std::io::Error::new(
+                e.kind(),
+                format!("Failed to read WASM module '{}': {}", path, e),
+            ))
+        })?;
+        let engine = wasmtime::Engine::default();
+        wasmtime::Module::validate(&engine, &bytes)
+            .map_err(|e| CanvasError::Wasm(format!("Invalid WASM module '{}': {}", path, e)))?;
+        Ok(Self {
+            path: path.to_string(),
+            bytes,
+        })
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
     }
 }

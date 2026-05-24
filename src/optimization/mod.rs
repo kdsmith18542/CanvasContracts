@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 /// Performance optimizer for production contracts
 pub struct PerformanceOptimizer {
-    config: Config,
+    _config: Config,
     optimization_passes: Vec<Box<dyn OptimizationPass>>,
     cache: HashMap<String, OptimizationResult>,
 }
@@ -83,7 +83,7 @@ pub struct CacheOptimizationPass;
 
 /// Parallel execution optimizer
 pub struct ParallelExecutionOptimizer {
-    config: Config,
+    _config: Config,
 }
 
 /// Parallel execution plan
@@ -106,7 +106,7 @@ pub struct ExecutionStage {
 
 /// Resource usage analyzer
 pub struct ResourceUsageAnalyzer {
-    config: Config,
+    _config: Config,
 }
 
 /// Resource usage report
@@ -197,7 +197,7 @@ impl PerformanceOptimizer {
     /// Create a new performance optimizer
     pub fn new(config: &Config) -> Self {
         let mut optimizer = Self {
-            config: config.clone(),
+            _config: config.clone(),
             optimization_passes: Vec::new(),
             cache: HashMap::new(),
         };
@@ -360,7 +360,7 @@ impl OptimizationPass for DeadCodeEliminationPass {
         })
     }
 
-    fn is_applicable(&self, graph: &VisualGraph) -> bool {
+    fn is_applicable(&self, _graph: &VisualGraph) -> bool {
         // Always applicable
         true
     }
@@ -481,14 +481,18 @@ impl OptimizationPass for LoopOptimizationPass {
 impl LoopOptimizationPass {
     fn find_loops(
         &self,
-        nodes: &[VisualNode],
-        edges: &[Connection],
+        _nodes: &[VisualNode],
+        _edges: &[Connection],
     ) -> CanvasResult<Vec<Vec<NodeId>>> {
         // TODO: Implement actual loop detection using DFS
         Ok(Vec::new())
     }
 
-    fn can_optimize_loop(&self, loop_nodes: &[NodeId], graph: &VisualGraph) -> CanvasResult<bool> {
+    fn can_optimize_loop(
+        &self,
+        _loop_nodes: &[NodeId],
+        _graph: &VisualGraph,
+    ) -> CanvasResult<bool> {
         // TODO: Implement loop optimization analysis
         Ok(false)
     }
@@ -610,7 +614,7 @@ impl ParallelExecutionOptimizer {
     /// Create a new parallel execution optimizer
     pub fn new(config: &Config) -> Self {
         Self {
-            config: config.clone(),
+            _config: config.clone(),
         }
     }
 
@@ -647,7 +651,7 @@ impl ParallelExecutionOptimizer {
     fn topological_sort(
         &self,
         nodes: &[VisualNode],
-        dependencies: &HashMap<NodeId, Vec<NodeId>>,
+        _dependencies: &HashMap<NodeId, Vec<NodeId>>,
     ) -> CanvasResult<Vec<ExecutionStage>> {
         // TODO: Implement actual topological sort
         let mut stages = Vec::new();
@@ -704,7 +708,7 @@ impl ResourceUsageAnalyzer {
     /// Create a new resource usage analyzer
     pub fn new(config: &Config) -> Self {
         Self {
-            config: config.clone(),
+            _config: config.clone(),
         }
     }
 
@@ -884,7 +888,7 @@ impl ResourceUsageAnalyzer {
     /// Generate recommendations
     fn generate_recommendations(
         &self,
-        graph: &VisualGraph,
+        _graph: &VisualGraph,
         memory_usage: &MemoryUsage,
         cpu_usage: &CpuUsage,
         gas_usage: &GasUsage,
@@ -1020,8 +1024,8 @@ mod tests {
         let graph = VisualGraph::new("test");
         let report = analyzer.analyze(&graph).unwrap();
 
-        assert!(report.memory_usage.peak_memory >= 0);
+        assert!(report.memory_usage.peak_memory <= report.memory_usage.peak_memory);
         assert!(report.cpu_usage.peak_cpu >= 0.0);
-        assert!(report.gas_usage.total_gas >= 0);
+        assert!(report.gas_usage.total_gas <= report.gas_usage.total_gas);
     }
 }

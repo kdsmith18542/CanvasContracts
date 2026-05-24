@@ -92,7 +92,11 @@ impl OptimizationEngine {
             if let Some(matching_nodes) = self.find_matching_pattern(graph, &rule.pattern) {
                 suggestions.push(OptimizationSuggestion {
                     title: rule.name.clone(),
-                    description: rule.description.clone(),
+                    description: format!(
+                        "{} (replacement pattern size: {})",
+                        rule.description,
+                        rule.replacement.len()
+                    ),
                     estimated_gas_savings: rule.gas_savings,
                     nodes: matching_nodes,
                     implementation: rule.implementation.clone(),
@@ -114,10 +118,22 @@ impl OptimizationEngine {
             NodeType::State => {
                 // Storage operations are expensive
                 cost += 20000; // SSTORE cost
+                if let Some(op) = node.properties.get("operation").and_then(|v| v.as_str()) {
+                    let key = op.to_ascii_lowercase();
+                    if let Some(extra_cost) = self.gas_costs.storage_costs.get(&key) {
+                        cost = cost.saturating_add(*extra_cost);
+                    }
+                }
             }
             NodeType::Arithmetic => {
                 // Arithmetic operations are cheap
                 cost += 3; // ADD/SUB cost
+                if let Some(op) = node.properties.get("operation").and_then(|v| v.as_str()) {
+                    let key = op.to_ascii_lowercase();
+                    if let Some(extra_cost) = self.gas_costs.computation_costs.get(&key) {
+                        cost = cost.saturating_add(*extra_cost);
+                    }
+                }
             }
             NodeType::Logic => {
                 // Logic operations are very cheap
