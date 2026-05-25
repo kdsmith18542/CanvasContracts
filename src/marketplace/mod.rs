@@ -233,7 +233,10 @@ impl MarketplaceClient {
         };
 
         let response = request.send().await.map_err(|e| {
-            CanvasError::Network(format!("Marketplace request to {} failed: {}", self.api_url, e))
+            CanvasError::Network(format!(
+                "Marketplace request to {} failed: {}",
+                self.api_url, e
+            ))
         })?;
 
         if response.status().is_success() {
@@ -356,9 +359,16 @@ impl MarketplaceClient {
         let response = self
             .send_request(client.get(self.endpoint(&format!("/items/{}/download", item_id))))
             .await?;
-        response.bytes().await.map(|bytes| bytes.to_vec()).map_err(|e| {
-            CanvasError::Network(format!("Failed to read downloaded marketplace content: {}", e))
-        })
+        response
+            .bytes()
+            .await
+            .map(|bytes| bytes.to_vec())
+            .map_err(|e| {
+                CanvasError::Network(format!(
+                    "Failed to read downloaded marketplace content: {}",
+                    e
+                ))
+            })
     }
 
     /// Upload item to marketplace

@@ -1,6 +1,6 @@
 use crate::{
     error::CanvasResult,
-    types::{NodeId, NodeType, VisualGraph, Connection, Position, VisualNode},
+    types::{Connection, NodeId, NodeType, Position, VisualGraph, VisualNode},
 };
 use uuid::Uuid;
 
@@ -347,14 +347,19 @@ impl OptimizationEngine {
             }
 
             // Find corresponding rule to know the replacement types
-            let rule = self.optimization_rules.iter().find(|r| r.name == suggestion.title);
+            let rule = self
+                .optimization_rules
+                .iter()
+                .find(|r| r.name == suggestion.title);
             let replacement_types = match rule {
                 Some(r) => &r.replacement,
                 None => continue,
             };
 
             // Gather the matched nodes in the current state of modified_graph
-            let matched_nodes: Vec<VisualNode> = modified_graph.nodes.iter()
+            let matched_nodes: Vec<VisualNode> = modified_graph
+                .nodes
+                .iter()
                 .filter(|n| matched_ids.contains(&n.id))
                 .cloned()
                 .collect();
@@ -364,8 +369,10 @@ impl OptimizationEngine {
             }
 
             // Compute average position
-            let avg_x = matched_nodes.iter().map(|n| n.position.x).sum::<f64>() / matched_nodes.len() as f64;
-            let avg_y = matched_nodes.iter().map(|n| n.position.y).sum::<f64>() / matched_nodes.len() as f64;
+            let avg_x = matched_nodes.iter().map(|n| n.position.x).sum::<f64>()
+                / matched_nodes.len() as f64;
+            let avg_y = matched_nodes.iter().map(|n| n.position.y).sum::<f64>()
+                / matched_nodes.len() as f64;
 
             // Create replacement nodes
             let mut replacement_nodes = Vec::new();
@@ -436,14 +443,16 @@ impl OptimizationEngine {
                     Uuid::new_v4(),
                     replacement_nodes[i].id,
                     "flow_out".to_string(),
-                    replacement_nodes[i+1].id,
-                    "flow_in".to_string()
+                    replacement_nodes[i + 1].id,
+                    "flow_in".to_string(),
                 );
                 new_connections.push(conn);
             }
 
             // Remove matched nodes from graph
-            modified_graph.nodes.retain(|n| !matched_ids.contains(&n.id));
+            modified_graph
+                .nodes
+                .retain(|n| !matched_ids.contains(&n.id));
 
             // Add replacement nodes to graph
             for node in replacement_nodes {

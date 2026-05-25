@@ -466,7 +466,7 @@ fn create_decode_proof_node() -> NodeDefinition {
         "Crypto",
     )
     .with_input(Port::new("flow_in", "Flow In", ValueType::Flow).required())
-    .with_input(Port::new("proof_json", "Proof JSON", ValueType::String))
+    .with_input(Port::new("proof_json", "Proof JSON", ValueType::String).required())
     .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
     .with_output(Port::new("chain_id", "Chain ID", ValueType::String))
     .with_output(Port::new("address", "Address", ValueType::String))
@@ -796,12 +796,15 @@ fn create_verify_chrono_proof_node() -> NodeDefinition {
         "ChronoNode",
     )
     .with_input(Port::new("flow_in", "Flow In", ValueType::Flow).required())
-    .with_input(Port::new(
-        "proof",
-        "Proof",
-        ValueType::Object(std::collections::HashMap::new()),
-    ))
-    .with_input(Port::new("data", "Data", ValueType::Bytes))
+    .with_input(
+        Port::new(
+            "proof",
+            "Proof",
+            ValueType::Object(std::collections::HashMap::new()),
+        )
+        .required(),
+    )
+    .with_input(Port::new("data", "Data", ValueType::Bytes).required())
     .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
     .with_output(Port::new("valid", "Valid", ValueType::Boolean))
     .with_config_schema(serde_json::json!({
@@ -908,14 +911,17 @@ fn create_verify_archive_range_node() -> NodeDefinition {
         "ChronoNode",
     )
     .with_input(Port::new("flow_in", "Flow In", ValueType::Flow).required())
-    .with_input(Port::new("chain_id", "Chain ID", ValueType::String))
-    .with_input(Port::new("from_height", "From Height", ValueType::Integer))
-    .with_input(Port::new("to_height", "To Height", ValueType::Integer))
-    .with_input(Port::new(
-        "proof",
-        "Proof",
-        ValueType::Object(std::collections::HashMap::new()),
-    ))
+    .with_input(Port::new("chain_id", "Chain ID", ValueType::String).required())
+    .with_input(Port::new("from_height", "From Height", ValueType::Integer).required())
+    .with_input(Port::new("to_height", "To Height", ValueType::Integer).required())
+    .with_input(
+        Port::new(
+            "proof",
+            "Proof",
+            ValueType::Object(std::collections::HashMap::new()),
+        )
+        .required(),
+    )
     .with_output(Port::new("flow_out", "Flow Out", ValueType::Flow))
     .with_output(Port::new("valid", "Valid", ValueType::Boolean))
     .with_config_schema(serde_json::json!({

@@ -271,7 +271,10 @@ impl CustomNodeRegistry {
         self.validate_required_ports(definition, &inputs)?;
         self.validate_required_properties(definition, &properties)?;
         if !module_info.exported_functions.is_empty()
-            && !module_info.exported_functions.iter().any(|name| name == function_name)
+            && !module_info
+                .exported_functions
+                .iter()
+                .any(|name| name == function_name)
         {
             return Err(CanvasError::Validation(format!(
                 "WASM function '{}' is not listed in module exports metadata",
@@ -289,14 +292,15 @@ impl CustomNodeRegistry {
         let arguments = definition
             .inputs
             .iter()
-            .map(|input| inputs.get(&input.name).cloned().unwrap_or(serde_json::Value::Null))
+            .map(|input| {
+                inputs
+                    .get(&input.name)
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null)
+            })
             .collect::<Vec<_>>();
-        let result = runtime.execute_function(
-            wasm_module.bytes(),
-            function_name,
-            arguments,
-            100_000,
-        )?;
+        let result =
+            runtime.execute_function(wasm_module.bytes(), function_name, arguments, 100_000)?;
 
         let mut outputs = HashMap::with_capacity(definition.outputs.len());
         if definition.outputs.len() == 1 {
@@ -323,7 +327,9 @@ impl CustomNodeRegistry {
                 for output in &definition.outputs {
                     outputs.insert(
                         output.name.clone(),
-                        obj.get(&output.name).cloned().unwrap_or(serde_json::Value::Null),
+                        obj.get(&output.name)
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
                     );
                 }
             }
@@ -331,7 +337,10 @@ impl CustomNodeRegistry {
                 for (index, output) in definition.outputs.iter().enumerate() {
                     outputs.insert(
                         output.name.clone(),
-                        values.get(index).cloned().unwrap_or(serde_json::Value::Null),
+                        values
+                            .get(index)
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
                     );
                 }
             }
@@ -421,7 +430,11 @@ impl CustomNodeRegistry {
         definition: &CustomNodeDefinition,
         properties: &HashMap<String, serde_json::Value>,
     ) -> CanvasResult<()> {
-        for property in definition.properties.iter().filter(|property| property.required) {
+        for property in definition
+            .properties
+            .iter()
+            .filter(|property| property.required)
+        {
             if !properties.contains_key(&property.name) {
                 return Err(CanvasError::Validation(format!(
                     "Missing required property '{}' for custom node '{}'",
@@ -451,7 +464,10 @@ impl CustomNodeRegistry {
             }
             if let Some(raw_json) = mapping_value.strip_prefix("const:") {
                 return serde_json::from_str::<serde_json::Value>(raw_json).map_err(|e| {
-                    CanvasError::Validation(format!("Invalid const mapping JSON '{}': {}", raw_json, e))
+                    CanvasError::Validation(format!(
+                        "Invalid const mapping JSON '{}': {}",
+                        raw_json, e
+                    ))
                 });
             }
             return Ok(inputs

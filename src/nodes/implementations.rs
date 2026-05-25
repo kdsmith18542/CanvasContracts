@@ -588,26 +588,34 @@ impl Node for DecodeProofNode {
         let proof_json = context
             .get_input(&"proof_json".to_string())
             .and_then(|v| v.as_str())
-            .unwrap_or("{}")
+            .ok_or_else(|| CanvasError::Node("Missing required input 'proof_json'".to_string()))?
             .to_string();
 
         context.use_gas(50)?;
 
-        let decoded: serde_json::Value =
-            serde_json::from_str(&proof_json).unwrap_or(serde_json::json!({}));
+        let decoded: serde_json::Value = serde_json::from_str(&proof_json)
+            .map_err(|e| CanvasError::Node(format!("Invalid proof JSON: {}", e)))?;
 
         let chain_id = decoded
             .get("chain_id")
             .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
+            .ok_or_else(|| {
+                CanvasError::Node("Proof is missing string field 'chain_id'".to_string())
+            })?;
         let address = decoded
             .get("address")
             .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
+            .ok_or_else(|| {
+                CanvasError::Node("Proof is missing string field 'address'".to_string())
+            })?;
         let dormant_since_block = decoded
             .get("dormant_since_block")
             .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+            .ok_or_else(|| {
+                CanvasError::Node(
+                    "Proof is missing integer field 'dormant_since_block'".to_string(),
+                )
+            })?;
 
         let mut outputs = std::collections::HashMap::new();
         outputs.insert(
@@ -809,24 +817,10 @@ pub struct CallContractNode;
 impl Node for CallContractNode {
     fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
         context.use_gas(500)?;
-        let contract_address = context
-            .get_input(&"contract_address".to_string())
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let method = context
-            .get_input(&"method".to_string())
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        let mut outputs = std::collections::HashMap::new();
-        outputs.insert("success".to_string(), serde_json::Value::Bool(true));
-        outputs.insert(
-            "output".to_string(),
-            serde_json::json!({ "function": method, "address": contract_address }),
-        );
-        Ok(NodeResult::success(outputs, 500))
+        Err(CanvasError::ExecutionError(
+            "CallContract is unavailable in local execution mode; run against a real BaaLS runtime"
+                .to_string(),
+        ))
     }
     fn node_type(&self) -> &str {
         "CallContract"
@@ -870,9 +864,10 @@ pub struct TransferValueNode;
 impl Node for TransferValueNode {
     fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
         context.use_gas(150)?;
-        let mut outputs = std::collections::HashMap::new();
-        outputs.insert("success".to_string(), serde_json::Value::Bool(true));
-        Ok(NodeResult::success(outputs, 150))
+        Err(CanvasError::ExecutionError(
+            "TransferValue is unavailable in local execution mode; run against a real BaaLS runtime"
+                .to_string(),
+        ))
     }
     fn node_type(&self) -> &str {
         "TransferValue"
@@ -940,8 +935,17 @@ pub struct VerifyChronoProofNode;
 impl Node for VerifyChronoProofNode {
     fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
         context.use_gas(500)?;
+
+        let _proof = context.get_input(&"proof".to_string()).ok_or_else(|| {
+            CanvasError::Node("Missing proof input for VerifyChronoProof".to_string())
+        })?;
+        let _data = context.get_input(&"data".to_string()).ok_or_else(|| {
+            CanvasError::Node("Missing data input for VerifyChronoProof".to_string())
+        })?;
+
         let mut outputs = std::collections::HashMap::new();
-        outputs.insert("valid".to_string(), serde_json::Value::Bool(true));
+        // Fail closed: local execution cannot validate ChronoNode proofs cryptographically.
+        outputs.insert("valid".to_string(), serde_json::Value::Bool(false));
         Ok(NodeResult::success(outputs, 500))
     }
     fn node_type(&self) -> &str {
@@ -1026,8 +1030,25 @@ pub struct VerifyArchiveRangeNode;
 impl Node for VerifyArchiveRangeNode {
     fn execute(&self, context: &mut crate::nodes::NodeContext) -> CanvasResult<NodeResult> {
         context.use_gas(500)?;
+
+        let _chain_id = context.get_input(&"chain_id".to_string()).ok_or_else(|| {
+            CanvasError::Node("Missing chain_id input for VerifyArchiveRange".to_string())
+        })?;
+        let _from_height = context
+            .get_input(&"from_height".to_string())
+            .ok_or_else(|| {
+                CanvasError::Node("Missing from_height input for VerifyArchiveRange".to_string())
+            })?;
+        let _to_height = context.get_input(&"to_height".to_string()).ok_or_else(|| {
+            CanvasError::Node("Missing to_height input for VerifyArchiveRange".to_string())
+        })?;
+        let _proof = context.get_input(&"proof".to_string()).ok_or_else(|| {
+            CanvasError::Node("Missing proof input for VerifyArchiveRange".to_string())
+        })?;
+
         let mut outputs = std::collections::HashMap::new();
-        outputs.insert("valid".to_string(), serde_json::Value::Bool(true));
+        // Fail closed: local execution cannot validate archive proofs cryptographically.
+        outputs.insert("valid".to_string(), serde_json::Value::Bool(false));
         Ok(NodeResult::success(outputs, 500))
     }
     fn node_type(&self) -> &str {
@@ -1601,6 +1622,77 @@ mod tests {
         let r = EndNode.execute(&mut c).unwrap();
         assert!(r.outputs.is_empty());
         assert_eq!(r.gas_used, 0);
+    }
+
+    #[test]
+    fn test_decode_proof_requires_valid_json_payload() {
+        let mut c = ctx(1000);
+        c.inputs.insert(
+            "proof_json".to_string(),
+            serde_json::json!(r#"{"chain_id":"baals","address":"0xabc","dormant_since_block":42}"#),
+        );
+        let r = DecodeProofNode.execute(&mut c).unwrap();
+        assert_eq!(r.outputs["chain_id"], serde_json::json!("baals"));
+        assert_eq!(r.outputs["address"], serde_json::json!("0xabc"));
+        assert_eq!(r.outputs["dormant_since_block"], serde_json::json!(42));
+    }
+
+    #[test]
+    fn test_decode_proof_rejects_invalid_json_payload() {
+        let mut c = ctx(1000);
+        c.inputs
+            .insert("proof_json".to_string(), serde_json::json!("{not-json"));
+        assert!(DecodeProofNode.execute(&mut c).is_err());
+    }
+
+    #[test]
+    fn test_call_contract_fails_closed_in_local_mode() {
+        let mut c = ctx(1000);
+        c.inputs.insert(
+            "contract_address".to_string(),
+            serde_json::json!("0x0000000000000000000000000000000000000001"),
+        );
+        c.inputs
+            .insert("method".to_string(), serde_json::json!("transfer"));
+        assert!(CallContractNode.execute(&mut c).is_err());
+    }
+
+    #[test]
+    fn test_transfer_value_fails_closed_in_local_mode() {
+        let mut c = ctx(1000);
+        c.inputs.insert(
+            "recipient".to_string(),
+            serde_json::json!("0x0000000000000000000000000000000000000002"),
+        );
+        c.inputs
+            .insert("amount".to_string(), serde_json::json!(100));
+        assert!(TransferValueNode.execute(&mut c).is_err());
+    }
+
+    #[test]
+    fn test_verify_chrono_proof_defaults_to_false_without_external_verifier() {
+        let mut c = ctx(2000);
+        c.inputs
+            .insert("proof".to_string(), serde_json::json!({"root":"0xabc"}));
+        c.inputs
+            .insert("data".to_string(), serde_json::json!("0xdeadbeef"));
+        let r = VerifyChronoProofNode.execute(&mut c).unwrap();
+        assert_eq!(r.outputs["valid"], serde_json::json!(false));
+    }
+
+    #[test]
+    fn test_verify_archive_range_defaults_to_false_without_external_verifier() {
+        let mut c = ctx(2000);
+        c.inputs
+            .insert("chain_id".to_string(), serde_json::json!("baals-local"));
+        c.inputs
+            .insert("from_height".to_string(), serde_json::json!(1));
+        c.inputs
+            .insert("to_height".to_string(), serde_json::json!(100));
+        c.inputs
+            .insert("proof".to_string(), serde_json::json!({"root":"0xabc"}));
+        let r = VerifyArchiveRangeNode.execute(&mut c).unwrap();
+        assert_eq!(r.outputs["valid"], serde_json::json!(false));
     }
 
     // ── Gas exhaustion ────────────────────────────────────────────────

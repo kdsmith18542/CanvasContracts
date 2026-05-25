@@ -7,6 +7,50 @@ use ed25519_dalek::Signer;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
+fn decode_signing_key(private_key_hex: &str) -> CanvasResult<ed25519_dalek::SigningKey> {
+    use zeroize::Zeroize;
+
+    let mut key_bytes = hex::decode(private_key_hex)
+        .map_err(|_| CanvasError::Baals("Invalid private key hex".to_string()))?;
+
+    let key = match key_bytes.len() {
+        32 => {
+            let mut seed_bytes: [u8; 32] = key_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| CanvasError::Baals("Invalid private key length".to_string()))?;
+            let key = ed25519_dalek::SigningKey::from_bytes(&seed_bytes);
+            seed_bytes.zeroize();
+            key
+        }
+        64 => {
+            let mut keypair_bytes: [u8; 64] = key_bytes.as_slice().try_into().map_err(|_| {
+                CanvasError::Baals(
+                    "Private key must be 32-byte seed or 64-byte keypair".to_string(),
+                )
+            })?;
+            let key = ed25519_dalek::SigningKey::from_keypair_bytes(&keypair_bytes)
+                .map_err(|e| CanvasError::Baals(format!("Invalid Ed25519 key: {}", e)))?;
+            keypair_bytes.zeroize();
+            key
+        }
+        _ => {
+            key_bytes.zeroize();
+            return Err(CanvasError::Baals(
+                "Private key must be 32-byte seed or 64-byte keypair".to_string(),
+            ));
+        }
+    };
+
+    key_bytes.zeroize();
+    Ok(key)
+}
+
+fn public_key_hex(private_key_hex: &str) -> CanvasResult<String> {
+    let signing_key = decode_signing_key(private_key_hex)?;
+    Ok(hex::encode(signing_key.verifying_key().to_bytes()))
+}
+
 pub trait BaalsClient: Send + Sync {
     fn deploy_contract(
         &self,
@@ -236,6 +280,33 @@ pub struct HttpBaalsClient {
 
 impl HttpBaalsClient {
     pub fn new(config: &Config) -> CanvasResult<Self> {
+        let node_url = config.baals.node_url.trim();
+        let parsed_url = reqwest::Url::parse(node_url).map_err(|e| {
+            CanvasError::Baals(format!("Invalid BaaLS node URL '{}': {}", node_url, e))
+        })?;
+
+        match parsed_url.scheme() {
+            "https" => {}
+            "http" => {
+                let local_host = matches!(
+                    parsed_url.host_str(),
+                    Some("localhost") | Some("127.0.0.1") | Some("::1")
+                );
+                if !local_host {
+                    return Err(CanvasError::Baals(format!(
+                        "Refusing insecure HTTP BaaLS URL '{}'; use HTTPS for non-local endpoints",
+                        node_url
+                    )));
+                }
+            }
+            other => {
+                return Err(CanvasError::Baals(format!(
+                    "Unsupported BaaLS URL scheme '{}'; expected http or https",
+                    other
+                )));
+            }
+        }
+
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(
                 config.baals.connection_timeout.max(30),
@@ -246,7 +317,7 @@ impl HttpBaalsClient {
         Ok(Self {
             config: config.clone(),
             client,
-            base_url: config.baals.node_url.trim_end_matches('/').to_string(),
+            base_url: node_url.trim_end_matches('/').to_string(),
         })
     }
 
@@ -261,26 +332,7 @@ impl HttpBaalsClient {
     }
 
     fn auth_token(&self, private_key_hex: &str) -> CanvasResult<String> {
-        let signing_key = {
-            use zeroize::Zeroize;
-            let mut key_bytes = hex::decode(private_key_hex)
-                .map_err(|_| CanvasError::Baals("Invalid private key hex".to_string()))?;
-            let mut keypair_bytes: [u8; 64] = key_bytes.as_slice().try_into().map_err(|_| {
-                key_bytes.zeroize();
-                CanvasError::Baals(
-                    "Private key must be 64 bytes (32-byte seed + 32-byte public key)".to_string(),
-                )
-            })?;
-            let key =
-                ed25519_dalek::SigningKey::from_keypair_bytes(&keypair_bytes).map_err(|e| {
-                    key_bytes.zeroize();
-                    keypair_bytes.zeroize();
-                    CanvasError::Baals(format!("Invalid Ed25519 key: {}", e))
-                })?;
-            key_bytes.zeroize();
-            keypair_bytes.zeroize();
-            key
-        };
+        let signing_key = decode_signing_key(private_key_hex)?;
         let verifying_key = signing_key.verifying_key();
 
         let timestamp = std::time::SystemTime::now()
@@ -333,20 +385,15 @@ impl BaalsClient for HttpBaalsClient {
         private_key: &str,
     ) -> CanvasResult<DeploymentResult> {
         let headers = self.headers_with_auth(private_key)?;
-
-        // Use the private key hex as the deployer public key (in production, derive the keypair properly)
-        let deployer_bytes = hex::decode(private_key)
-            .map_err(|_| CanvasError::Baals("Invalid deployer key hex".to_string()))?;
-        let deployer_pub = if deployer_bytes.len() >= 32 {
-            hex::encode(&deployer_bytes[..32])
-        } else {
-            return Err(CanvasError::Baals("Deployer key too short".to_string()));
-        };
+        let deployer_pub = public_key_hex(private_key)?;
+        let init_payload = serde_json::to_vec(&constructor_args).map_err(|e| {
+            CanvasError::Baals(format!("Failed to serialize constructor args: {}", e))
+        })?;
 
         let body = serde_json::json!({
             "deployer_hex": deployer_pub,
             "wasm_hex": hex::encode(wasm_bytes),
-            "init_hex": hex::encode(serde_json::to_string(&constructor_args).unwrap_or_default().as_bytes()),
+            "init_hex": hex::encode(init_payload),
             "gas_limit": 1_000_000,
         });
 
@@ -390,16 +437,14 @@ impl BaalsClient for HttpBaalsClient {
 
         let args_hex: Vec<String> = arguments
             .iter()
-            .map(|a| hex::encode(serde_json::to_string(a).unwrap_or_default().as_bytes()))
-            .collect();
+            .map(|a| {
+                serde_json::to_vec(a)
+                    .map(hex::encode)
+                    .map_err(|e| CanvasError::Baals(format!("Failed to serialize argument: {}", e)))
+            })
+            .collect::<CanvasResult<Vec<_>>>()?;
 
-        let caller_bytes = hex::decode(private_key)
-            .map_err(|_| CanvasError::Baals("Invalid caller key hex".to_string()))?;
-        let caller_pub = if caller_bytes.len() >= 32 {
-            hex::encode(&caller_bytes[..32])
-        } else {
-            return Err(CanvasError::Baals("Caller key too short".to_string()));
-        };
+        let caller_pub = public_key_hex(private_key)?;
 
         let body = serde_json::json!({
             "caller_hex": caller_pub,
@@ -605,11 +650,34 @@ impl BaalsNodeManager {
         let port = self.config.baals.local_node_port;
         log::info!("Starting local BaaLS node on port {}", port);
 
-        match std::process::Command::new("baalsd")
+        let baals_binary = std::env::var("CANVAS_BAALSD_PATH").unwrap_or_else(|_| {
+            log::warn!(
+                "CANVAS_BAALSD_PATH not set; resolving 'baalsd' from PATH. Set CANVAS_BAALSD_PATH to an absolute path for hardened startup."
+            );
+            "baalsd".to_string()
+        });
+        let baals_binary_path = std::path::Path::new(&baals_binary);
+        if baals_binary.contains(std::path::MAIN_SEPARATOR) && !baals_binary_path.is_absolute() {
+            return Err(CanvasError::Baals(
+                "CANVAS_BAALSD_PATH must be an absolute path when provided".to_string(),
+            ));
+        }
+
+        let data_dir = self.config.app.data_dir.join("baals-node");
+        std::fs::create_dir_all(&data_dir).map_err(|e| {
+            CanvasError::Baals(format!("Failed to create local BaaLS data dir: {}", e))
+        })?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&data_dir, std::fs::Permissions::from_mode(0o700));
+        }
+
+        match std::process::Command::new(&baals_binary)
             .arg("--port")
             .arg(port.to_string())
             .arg("--data-dir")
-            .arg("/tmp/baals-data")
+            .arg(&data_dir)
             .spawn()
         {
             Ok(child) => {
@@ -661,23 +729,7 @@ impl BaalsNodeManager {
 }
 
 pub fn sign_payload(payload: &[u8], private_key_hex: &str) -> CanvasResult<Vec<u8>> {
-    let key = {
-        use zeroize::Zeroize;
-        let mut key_bytes = hex::decode(private_key_hex)
-            .map_err(|_| CanvasError::Baals("Invalid private key hex".to_string()))?;
-        let mut keypair_bytes: [u8; 64] = key_bytes.as_slice().try_into().map_err(|_| {
-            key_bytes.zeroize();
-            CanvasError::Baals("Private key must be 64 bytes".to_string())
-        })?;
-        let key = ed25519_dalek::SigningKey::from_keypair_bytes(&keypair_bytes).map_err(|e| {
-            key_bytes.zeroize();
-            keypair_bytes.zeroize();
-            CanvasError::Baals(format!("Invalid Ed25519 key: {}", e))
-        })?;
-        key_bytes.zeroize();
-        keypair_bytes.zeroize();
-        key
-    };
+    let key = decode_signing_key(private_key_hex)?;
     Ok(key.sign(payload).to_bytes().to_vec())
 }
 
@@ -725,6 +777,14 @@ mod tests {
         let keypair_bytes = key.to_keypair_bytes();
         let hex_key = hex::encode(keypair_bytes);
         let sig = sign_payload(b"test", &hex_key).unwrap();
+        assert_eq!(sig.len(), 64);
+    }
+
+    #[test]
+    fn test_sign_payload_accepts_32_byte_seed_hex() {
+        let secret = [7u8; 32];
+        let hex_key = hex::encode(secret);
+        let sig = sign_payload(b"seed-format", &hex_key).unwrap();
         assert_eq!(sig.len(), 64);
     }
 

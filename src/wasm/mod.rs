@@ -53,30 +53,30 @@ fn json_to_wasm_value(
 ) -> CanvasResult<wasmtime::Val> {
     match expected_type {
         wasmtime::ValType::I32 => {
-            let val = value
-                .as_i64()
-                .ok_or_else(|| CanvasError::Type("Expected integer argument for i32".to_string()))?;
+            let val = value.as_i64().ok_or_else(|| {
+                CanvasError::Type("Expected integer argument for i32".to_string())
+            })?;
             let casted = i32::try_from(val).map_err(|_| {
                 CanvasError::Type(format!("Value {} does not fit into i32 argument", val))
             })?;
             Ok(wasmtime::Val::I32(casted))
         }
         wasmtime::ValType::I64 => {
-            let val = value
-                .as_i64()
-                .ok_or_else(|| CanvasError::Type("Expected integer argument for i64".to_string()))?;
+            let val = value.as_i64().ok_or_else(|| {
+                CanvasError::Type("Expected integer argument for i64".to_string())
+            })?;
             Ok(wasmtime::Val::I64(val))
         }
         wasmtime::ValType::F32 => {
-            let val = value
-                .as_f64()
-                .ok_or_else(|| CanvasError::Type("Expected numeric argument for f32".to_string()))?;
+            let val = value.as_f64().ok_or_else(|| {
+                CanvasError::Type("Expected numeric argument for f32".to_string())
+            })?;
             Ok(wasmtime::Val::F32((val as f32).to_bits()))
         }
         wasmtime::ValType::F64 => {
-            let val = value
-                .as_f64()
-                .ok_or_else(|| CanvasError::Type("Expected numeric argument for f64".to_string()))?;
+            let val = value.as_f64().ok_or_else(|| {
+                CanvasError::Type("Expected numeric argument for f64".to_string())
+            })?;
             Ok(wasmtime::Val::F64(val.to_bits()))
         }
         other => Err(CanvasError::Type(format!(
@@ -117,7 +117,10 @@ fn map_wasm_execution_error(function_name: &str, error: wasmtime::Error) -> Canv
     if message.contains("Execution reverted with reason hash") {
         return CanvasError::ExecutionError(message);
     }
-    CanvasError::Wasm(format!("Execution of '{}' failed: {}", function_name, message))
+    CanvasError::Wasm(format!(
+        "Execution of '{}' failed: {}",
+        function_name, message
+    ))
 }
 
 impl WasmRuntime {
@@ -370,10 +373,14 @@ impl WasmRuntime {
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
         linker
-            .func_wrap("baals", "baals_revert_with_reason", |reason_hash: i64| -> i64 {
-                // Auxiliary non-trapping API for modules that prefer explicit status checks.
-                reason_hash
-            })
+            .func_wrap(
+                "baals",
+                "baals_revert_with_reason",
+                |reason_hash: i64| -> i64 {
+                    // Auxiliary non-trapping API for modules that prefer explicit status checks.
+                    reason_hash
+                },
+            )
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
         linker
@@ -383,10 +390,14 @@ impl WasmRuntime {
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
         linker
-            .func_wrap(
+            .func_wrap::<_, Result<(), wasmtime::Error>>(
                 "baals",
                 "baals_call_contract",
-                |_contract_hash: i64, _method_hash: i64, _args_hash: i64| {},
+                |_contract_hash: i64, _method_hash: i64, _args_hash: i64| {
+                    Err(wasmtime::Error::msg(
+                        "baals_call_contract is disabled in local simulation runtime",
+                    ))
+                },
             )
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
@@ -403,10 +414,14 @@ impl WasmRuntime {
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
         linker
-            .func_wrap(
+            .func_wrap::<_, Result<(), wasmtime::Error>>(
                 "baals",
                 "baals_transfer_value",
-                |_recipient_hash: i64, _amount: i64| {},
+                |_recipient_hash: i64, _amount: i64| {
+                    Err(wasmtime::Error::msg(
+                        "baals_transfer_value is disabled in local simulation runtime",
+                    ))
+                },
             )
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
@@ -414,13 +429,7 @@ impl WasmRuntime {
             .func_wrap(
                 "crypto",
                 "crypto_verify_signature",
-                |message_hash: i64, signature_hash: i64, public_key_hash: i64| -> i64 {
-                    if message_hash != 0 && signature_hash != 0 && public_key_hash != 0 {
-                        1
-                    } else {
-                        0
-                    }
-                },
+                |_message_hash: i64, _signature_hash: i64, _public_key_hash: i64| -> i64 { 0 },
             )
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
@@ -457,13 +466,7 @@ impl WasmRuntime {
             .func_wrap(
                 "chrononode",
                 "chrononode_verify_proof",
-                |proof_hash: i64, data_hash: i64| -> i64 {
-                    if proof_hash != 0 && data_hash != 0 {
-                        1
-                    } else {
-                        0
-                    }
-                },
+                |_proof_hash: i64, _data_hash: i64| -> i64 { 0 },
             )
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
 
@@ -507,12 +510,8 @@ impl WasmRuntime {
             .func_wrap(
                 "chrononode",
                 "chrononode_verify_archive_range",
-                |chain_hash: i64, from_height: i64, to_height: i64, proof_hash: i64| -> i64 {
-                    if chain_hash != 0 && proof_hash != 0 && from_height <= to_height {
-                        1
-                    } else {
-                        0
-                    }
+                |_chain_hash: i64, _from_height: i64, _to_height: i64, _proof_hash: i64| -> i64 {
+                    0
                 },
             )
             .map_err(|e| CanvasError::Wasm(format!("Failed to link host function: {}", e)))?;
@@ -636,17 +635,82 @@ impl WasmAnalyzer {
     }
 
     pub fn analyze_security(&self, wasm_bytes: &[u8]) -> CanvasResult<SecurityAnalysis> {
-        let issues = Vec::new();
+        let mut issues = Vec::new();
         let mut warnings = Vec::new();
 
         if wasm_bytes.len() > 1_000_000 {
             warnings.push("Module size is very large (>1MB)".to_string());
         }
 
+        let engine = wasmtime::Engine::default();
+        let module = wasmtime::Module::new(&engine, wasm_bytes)
+            .map_err(|e| CanvasError::Wasm(format!("Security analysis failed: {}", e)))?;
+
+        let has_main = module.exports().any(|export| export.name() == "main");
+        if !has_main {
+            warnings.push("Module does not export a main function".to_string());
+        }
+
+        for import in module.imports() {
+            let namespace = import.module();
+            let name = import.name();
+            let allowed = match namespace {
+                "baals" => matches!(
+                    name,
+                    "baals_get_sender"
+                        | "baals_get_contract_id"
+                        | "baals_get_block_timestamp"
+                        | "baals_get_block_height"
+                        | "baals_emit_event"
+                        | "baals_revert"
+                        | "baals_revert_with_reason"
+                        | "baals_hash_sha256"
+                        | "baals_call_contract"
+                        | "baals_read_call_result"
+                        | "baals_transfer_value"
+                ),
+                "crypto" => matches!(name, "crypto_verify_signature" | "crypto_decode_proof"),
+                "chrononode" => matches!(
+                    name,
+                    "chrononode_fetch_block"
+                        | "chrononode_fetch_checkpoint"
+                        | "chrononode_verify_proof"
+                        | "chrononode_extract_event"
+                        | "chrononode_extract_tx_by_sender"
+                        | "chrononode_extract_tx_by_recipient"
+                        | "chrononode_verify_archive_range"
+                ),
+                "resurgence" => matches!(
+                    name,
+                    "resurgence_check_token_age"
+                        | "resurgence_check_token_activity_window"
+                        | "resurgence_check_liquidity_dormancy"
+                        | "resurgence_check_governance_dormancy"
+                        | "resurgence_calculate_dormancy_score"
+                        | "resurgence_normalize_dead_coin_risk"
+                        | "resurgence_generate_dormancy_proof"
+                        | "resurgence_emit_dormancy_oracle_result"
+                ),
+                _ => false,
+            };
+
+            if !allowed {
+                issues.push(format!("Unknown host import '{}::{}'", namespace, name));
+            }
+        }
+
+        let risk_level = if !issues.is_empty() {
+            RiskLevel::High
+        } else if !warnings.is_empty() {
+            RiskLevel::Medium
+        } else {
+            RiskLevel::Low
+        };
+
         Ok(SecurityAnalysis {
             issues,
             warnings,
-            risk_level: RiskLevel::Low,
+            risk_level,
         })
     }
 
@@ -725,6 +789,67 @@ mod tests {
         let config = Config::default();
         let runtime = WasmRuntime::new(&config);
         assert!(runtime.is_ok());
+    }
+
+    #[test]
+    fn test_wasm_security_analysis_flags_unknown_imports() {
+        let analyzer = WasmAnalyzer::new(&Config::default()).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types.function([], [ValType::I64]);
+        types.function([], []);
+        module.section(&types);
+
+        let mut imports = ImportSection::new();
+        imports.import("evil", "syscall", EntityType::Function(1));
+        module.section(&imports);
+
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+
+        let mut exports = ExportSection::new();
+        exports.export("main", ExportKind::Func, 1);
+        module.section(&exports);
+
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        func.instruction(&Instruction::I64Const(7));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+
+        let analysis = analyzer.analyze_security(&module.finish()).unwrap();
+        assert!(!analysis.issues.is_empty());
+        assert!(matches!(analysis.risk_level, RiskLevel::High));
+    }
+
+    #[test]
+    fn test_wasm_security_analysis_warns_when_main_is_missing() {
+        let analyzer = WasmAnalyzer::new(&Config::default()).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types.function([], []);
+        module.section(&types);
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+        let mut exports = ExportSection::new();
+        exports.export("dummy", ExportKind::Func, 0);
+        module.section(&exports);
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+
+        let analysis = analyzer.analyze_security(&module.finish()).unwrap();
+        assert!(!analysis.warnings.is_empty());
+        assert!(matches!(analysis.risk_level, RiskLevel::Medium));
     }
 
     #[test]
@@ -971,17 +1096,10 @@ mod tests {
         func.instruction(&Instruction::LocalGet(0));
         func.instruction(&Instruction::Call(5)); // hash_sha256
         func.instruction(&Instruction::LocalSet(0));
-        func.instruction(&Instruction::I64Const(11));
-        func.instruction(&Instruction::I64Const(22));
-        func.instruction(&Instruction::I64Const(33));
-        func.instruction(&Instruction::Call(6)); // call_contract
         func.instruction(&Instruction::I64Const(0));
         func.instruction(&Instruction::I64Const(44));
         func.instruction(&Instruction::Call(7)); // read_call_result
         func.instruction(&Instruction::Drop);
-        func.instruction(&Instruction::I64Const(55));
-        func.instruction(&Instruction::I64Const(66));
-        func.instruction(&Instruction::Call(8)); // transfer_value
         func.instruction(&Instruction::LocalGet(0));
         func.instruction(&Instruction::End);
         codes.function(&func);
@@ -1217,8 +1335,51 @@ mod tests {
             .simulate(&wasm_bytes, serde_json::json!({}), 20_000)
             .unwrap();
 
-        assert_eq!(result.output["result"].as_i64().unwrap_or(0), 1);
+        assert_eq!(result.output["result"].as_i64().unwrap_or(0), 0);
         assert_eq!(result.events.len(), 1);
+    }
+
+    #[test]
+    fn test_simulation_traps_on_disabled_side_effect_host_calls() {
+        let config = Config::default();
+        let runtime = WasmRuntime::new(&config).unwrap();
+
+        use wasm_encoder::*;
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        // type 0: main () -> i64
+        types.function([], [ValType::I64]);
+        // type 1: (i64, i64, i64) -> ()
+        types.function([ValType::I64, ValType::I64, ValType::I64], []);
+        module.section(&types);
+
+        let mut imports = ImportSection::new();
+        imports.import("baals", "baals_call_contract", EntityType::Function(1));
+        module.section(&imports);
+
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+
+        let mut exports = ExportSection::new();
+        // one import + local function
+        exports.export("main", ExportKind::Func, 1);
+        module.section(&exports);
+
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        func.instruction(&Instruction::I64Const(1));
+        func.instruction(&Instruction::I64Const(2));
+        func.instruction(&Instruction::I64Const(3));
+        func.instruction(&Instruction::Call(0));
+        func.instruction(&Instruction::I64Const(42));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+
+        let wasm_bytes = module.finish();
+        let result = runtime.simulate(&wasm_bytes, serde_json::json!({}), 10_000);
+        assert!(result.is_err());
     }
 
     #[test]

@@ -223,13 +223,10 @@ impl AiAssistant {
     }
 
     /// Analyze context around a node
-    fn analyze_context(
-        &self,
-        graph: &VisualGraph,
-        node_id: NodeId,
-    ) -> CanvasResult<NodeContext> {
-        let node = graph.get_node(node_id)
-            .ok_or_else(|| crate::error::CanvasError::NodeNotFound(format!("Node {} not found", node_id)))?;
+    fn analyze_context(&self, graph: &VisualGraph, node_id: NodeId) -> CanvasResult<NodeContext> {
+        let node = graph.get_node(node_id).ok_or_else(|| {
+            crate::error::CanvasError::NodeNotFound(format!("Node {} not found", node_id))
+        })?;
 
         let node_type = NodeType::from(node.node_type.as_str());
 
@@ -246,8 +243,16 @@ impl AiAssistant {
         connected_nodes.dedup();
 
         // Input and Output types
-        let input_types = node.inputs.iter().map(|p| format!("{:?}", p.value_type)).collect();
-        let output_types = node.outputs.iter().map(|p| format!("{:?}", p.value_type)).collect();
+        let input_types = node
+            .inputs
+            .iter()
+            .map(|p| format!("{:?}", p.value_type))
+            .collect();
+        let output_types = node
+            .outputs
+            .iter()
+            .map(|p| format!("{:?}", p.value_type))
+            .collect();
 
         // Trace execution path backwards from current node to a root/Start node
         let mut execution_path = Vec::new();
@@ -255,7 +260,9 @@ impl AiAssistant {
         execution_path.push(current);
         let mut visited = std::collections::HashSet::new();
         visited.insert(current);
-        while let Some(pred) = graph.connections.iter()
+        while let Some(pred) = graph
+            .connections
+            .iter()
             .find(|c| c.target_node == current && !visited.contains(&c.source_node))
             .map(|c| c.source_node)
         {
@@ -355,12 +362,17 @@ mod tests {
         let config = Config::default();
         let ai = AiAssistant::new(&config).unwrap();
         let mut graph = VisualGraph::new("test");
-        
+
         let node_id = uuid::Uuid::new_v4();
-        let node = crate::types::VisualNode::new(node_id, "If", crate::types::Position::new(0.0, 0.0))
-            .with_inputs(vec![crate::types::Port::new("condition", "Condition", crate::types::ValueType::Boolean)]);
+        let node =
+            crate::types::VisualNode::new(node_id, "If", crate::types::Position::new(0.0, 0.0))
+                .with_inputs(vec![crate::types::Port::new(
+                    "condition",
+                    "Condition",
+                    crate::types::ValueType::Boolean,
+                )]);
         graph.add_node(node);
-        
+
         let result = ai.suggest_next_nodes(&graph, node_id);
         assert!(result.is_ok());
         let suggestions = result.unwrap();
@@ -382,21 +394,28 @@ mod tests {
         let config = Config::default();
         let ai = AiAssistant::new(&config).unwrap();
         let mut graph = VisualGraph::new("test");
-        
+
         let n1_id = uuid::Uuid::new_v4();
         let n2_id = uuid::Uuid::new_v4();
         let n1 = crate::types::VisualNode::new(n1_id, "Add", crate::types::Position::new(0.0, 0.0));
-        let n2 = crate::types::VisualNode::new(n2_id, "Subtract", crate::types::Position::new(0.0, 0.0));
-        
+        let n2 =
+            crate::types::VisualNode::new(n2_id, "Subtract", crate::types::Position::new(0.0, 0.0));
+
         graph.add_node(n1);
         graph.add_node(n2);
-        
-        let conn = crate::types::Connection::new(uuid::Uuid::new_v4(), n1_id, "flow_out", n2_id, "flow_in");
+
+        let conn = crate::types::Connection::new(
+            uuid::Uuid::new_v4(),
+            n1_id,
+            "flow_out",
+            n2_id,
+            "flow_in",
+        );
         graph.add_connection(conn);
-        
+
         let result = ai.optimize_contract(&graph).unwrap();
         assert!(result.modified_graph.is_some());
-        
+
         let modified = result.modified_graph.unwrap();
         assert_eq!(modified.nodes.len(), 1);
     }

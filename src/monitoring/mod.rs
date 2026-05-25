@@ -104,9 +104,14 @@ pub struct CircuitBreaker {
 /// Circuit state
 #[derive(Debug, Clone)]
 pub enum CircuitState {
-    Closed { failure_count: u32 }, // Normal operation
-    Open { opened_at: Instant, failure_count: u32 }, // Failing, reject requests
-    HalfOpen,                      // Testing if recovered
+    Closed {
+        failure_count: u32,
+    }, // Normal operation
+    Open {
+        opened_at: Instant,
+        failure_count: u32,
+    }, // Failing, reject requests
+    HalfOpen, // Testing if recovered
 }
 
 /// Load balancer for distributed deployment
@@ -224,18 +229,10 @@ impl MetricsCollector {
                         store.gauges.insert(name, value);
                     }
                     MetricEvent::RecordHistogram(name, value) => {
-                        store
-                            .histograms
-                            .entry(name)
-                            .or_default()
-                            .push(value);
+                        store.histograms.entry(name).or_default().push(value);
                     }
                     MetricEvent::RecordTimer(name, duration) => {
-                        store
-                            .timers
-                            .entry(name)
-                            .or_default()
-                            .push(duration);
+                        store.timers.entry(name).or_default().push(duration);
                     }
                 }
             }
@@ -355,7 +352,10 @@ impl MetricsExporter for PrometheusExporter {
             .body(prometheus_metrics)
             .send()
             .map_err(|e| {
-                CanvasError::Network(format!("Failed to send metrics to Prometheus endpoint: {}", e))
+                CanvasError::Network(format!(
+                    "Failed to send metrics to Prometheus endpoint: {}",
+                    e
+                ))
             })?;
 
         if !response.status().is_success() {
@@ -442,7 +442,10 @@ impl MetricsExporter for InfluxDbExporter {
             request = request.header("Authorization", format!("Token {}", self.token));
         }
         let response = request.send().map_err(|e| {
-            CanvasError::Network(format!("Failed to send metrics to InfluxDB endpoint: {}", e))
+            CanvasError::Network(format!(
+                "Failed to send metrics to InfluxDB endpoint: {}",
+                e
+            ))
         })?;
 
         if !response.status().is_success() {
@@ -686,7 +689,9 @@ impl CircuitBreaker {
                                 failure_count: next,
                             };
                         } else {
-                            *state = CircuitState::Closed { failure_count: next };
+                            *state = CircuitState::Closed {
+                                failure_count: next,
+                            };
                         }
                     }
                     CircuitState::Open { .. } => {}
@@ -789,9 +794,7 @@ impl LoadBalancer {
             LoadBalancingStrategy::HealthBased => {
                 // Return healthiest node
                 nodes.sort_by(|a, b| match (&a.health, &b.health) {
-                    (HealthStatus::Healthy, HealthStatus::Healthy) => {
-                        a.load.total_cmp(&b.load)
-                    }
+                    (HealthStatus::Healthy, HealthStatus::Healthy) => a.load.total_cmp(&b.load),
                     (HealthStatus::Healthy, _) => std::cmp::Ordering::Less,
                     (_, HealthStatus::Healthy) => std::cmp::Ordering::Greater,
                     _ => std::cmp::Ordering::Equal,

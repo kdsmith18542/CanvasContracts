@@ -127,10 +127,7 @@ impl RuleBasedValidator {
                     message.push_str(&format!(" mitigation: {}", result.mitigation));
                 }
                 if !result.affected_nodes.is_empty() {
-                    message.push_str(&format!(
-                        " impacted_nodes={}",
-                        result.affected_nodes.len()
-                    ));
+                    message.push_str(&format!(" impacted_nodes={}", result.affected_nodes.len()));
                 }
                 match rule.severity {
                     RuleSeverity::Info => info.push(message),
@@ -424,9 +421,7 @@ impl RuleBasedValidator {
         }
 
         for node in &nodes {
-            if !visited.contains(&node.id)
-                && dfs(&node.id, &edges, &mut visited, &mut rec_stack)
-            {
+            if !visited.contains(&node.id) && dfs(&node.id, &edges, &mut visited, &mut rec_stack) {
                 return true;
             }
         }

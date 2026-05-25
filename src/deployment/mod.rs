@@ -353,21 +353,23 @@ impl DeploymentManager {
     async fn start_deployment(&self, deployment_id: &str) -> CanvasResult<()> {
         let deployment_name = {
             let deployments = self.deployments.lock().unwrap();
-            let deployment = deployments
-                .get(deployment_id)
-                .ok_or_else(|| CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+            let deployment = deployments.get(deployment_id).ok_or_else(|| {
+                CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id))
+            })?;
             deployment.name.clone()
         };
 
         {
             let mut breakpoints = self.circuit_breakers.lock().unwrap();
-            breakpoints.entry(deployment_id.to_string()).or_insert_with(|| {
-                CircuitBreaker::new(
-                    deployment_id,
-                    5,
-                    Duration::from_secs(self.config.runtime.timeout.max(1)),
-                )
-            });
+            breakpoints
+                .entry(deployment_id.to_string())
+                .or_insert_with(|| {
+                    CircuitBreaker::new(
+                        deployment_id,
+                        5,
+                        Duration::from_secs(self.config.runtime.timeout.max(1)),
+                    )
+                });
         }
 
         let overall_health = {
@@ -376,9 +378,9 @@ impl DeploymentManager {
         };
 
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(deployment_id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+        let deployment = deployments.get_mut(deployment_id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id))
+        })?;
 
         deployment.status = DeploymentStatus::Deploying;
         deployment.metrics.availability = 100.0;
@@ -390,7 +392,11 @@ impl DeploymentManager {
                 deployment.status = DeploymentStatus::Running;
             }
             crate::monitoring::HealthStatus::Degraded(reason) => {
-                log::warn!("Deployment {} started in degraded mode: {}", deployment_id, reason);
+                log::warn!(
+                    "Deployment {} started in degraded mode: {}",
+                    deployment_id,
+                    reason
+                );
                 deployment.status = DeploymentStatus::Degraded;
                 deployment.metrics.availability = 95.0;
             }
@@ -413,7 +419,10 @@ impl DeploymentManager {
 
         let metrics = self.metrics.lock().unwrap();
         metrics.increment_counter("deployments_started_total", 1)?;
-        metrics.set_gauge("deployments_running", self.running_deployments_count() as f64)?;
+        metrics.set_gauge(
+            "deployments_running",
+            self.running_deployments_count() as f64,
+        )?;
 
         Ok(())
     }
@@ -421,9 +430,9 @@ impl DeploymentManager {
     /// Scale deployment
     pub async fn scale(&self, deployment_id: &str, replicas: u32) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(deployment_id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+        let deployment = deployments.get_mut(deployment_id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id))
+        })?;
 
         if matches!(deployment.status, DeploymentStatus::Stopped) {
             return Err(CanvasError::InvalidState(format!(
@@ -461,9 +470,9 @@ impl DeploymentManager {
     pub async fn update(&self, deployment_id: &str, graph: &VisualGraph) -> CanvasResult<()> {
         let wasm_bytes = self.compile_graph(graph)?;
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(deployment_id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+        let deployment = deployments.get_mut(deployment_id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id))
+        })?;
 
         deployment.status = DeploymentStatus::Deploying;
         deployment.graph = graph.clone();
@@ -485,9 +494,9 @@ impl DeploymentManager {
     /// Stop deployment
     pub async fn stop(&self, deployment_id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(deployment_id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id)))?;
+        let deployment = deployments.get_mut(deployment_id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Deployment '{}' not found", deployment_id))
+        })?;
 
         deployment.status = DeploymentStatus::Stopped;
         deployment.metrics.throughput = 0.0;
@@ -501,7 +510,10 @@ impl DeploymentManager {
 
         let metrics = self.metrics.lock().unwrap();
         metrics.increment_counter("deployments_stopped_total", 1)?;
-        metrics.set_gauge("deployments_running", self.running_deployments_count() as f64)?;
+        metrics.set_gauge(
+            "deployments_running",
+            self.running_deployments_count() as f64,
+        )?;
 
         Ok(())
     }
@@ -555,7 +567,8 @@ impl DeploymentManager {
                 config.scaling.max_replicas, config.scaling.min_replicas
             )));
         }
-        if config.replicas < config.scaling.min_replicas || config.replicas > config.scaling.max_replicas
+        if config.replicas < config.scaling.min_replicas
+            || config.replicas > config.scaling.max_replicas
         {
             return Err(CanvasError::Validation(format!(
                 "Initial replicas {} must be within [{}..={}]",
@@ -569,7 +582,12 @@ impl DeploymentManager {
         let deployments = self.deployments.lock().unwrap();
         deployments
             .values()
-            .filter(|d| matches!(d.status, DeploymentStatus::Running | DeploymentStatus::Degraded))
+            .filter(|d| {
+                matches!(
+                    d.status,
+                    DeploymentStatus::Running | DeploymentStatus::Degraded
+                )
+            })
             .count()
     }
 }
@@ -648,15 +666,11 @@ impl BlueGreenDeploymentManager {
         config: DeploymentConfig,
     ) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id)))?;
-        deployment.blue_deployment = Some(self.create_environment_deployment(
-            id,
-            "blue",
-            graph,
-            config,
-        )?);
+        let deployment = deployments.get_mut(id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id))
+        })?;
+        deployment.blue_deployment =
+            Some(self.create_environment_deployment(id, "blue", graph, config)?);
         if matches!(deployment.active_environment, ActiveEnvironment::Blue) {
             deployment.switchover_config.automatic_switchover = true;
         }
@@ -672,15 +686,11 @@ impl BlueGreenDeploymentManager {
         config: DeploymentConfig,
     ) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id)))?;
-        deployment.green_deployment = Some(self.create_environment_deployment(
-            id,
-            "green",
-            graph,
-            config,
-        )?);
+        let deployment = deployments.get_mut(id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id))
+        })?;
+        deployment.green_deployment =
+            Some(self.create_environment_deployment(id, "green", graph, config)?);
 
         Ok(())
     }
@@ -688,9 +698,9 @@ impl BlueGreenDeploymentManager {
     /// Switch traffic to green environment
     pub async fn switch_to_green(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id)))?;
+        let deployment = deployments.get_mut(id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id))
+        })?;
         if deployment.green_deployment.is_none() {
             return Err(CanvasError::InvalidState(format!(
                 "Cannot switch '{}' to green before green environment is deployed",
@@ -706,9 +716,9 @@ impl BlueGreenDeploymentManager {
     /// Switch traffic to blue environment
     pub async fn switch_to_blue(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id)))?;
+        let deployment = deployments.get_mut(id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id))
+        })?;
         if deployment.blue_deployment.is_none() {
             return Err(CanvasError::InvalidState(format!(
                 "Cannot switch '{}' to blue before blue environment is deployed",
@@ -724,9 +734,9 @@ impl BlueGreenDeploymentManager {
     /// Rollback to previous environment
     pub async fn rollback(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id)))?;
+        let deployment = deployments.get_mut(id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Blue/green deployment '{}' not found", id))
+        })?;
         deployment.active_environment = match deployment.active_environment {
             ActiveEnvironment::Blue => {
                 if deployment.green_deployment.is_none() {
@@ -863,9 +873,9 @@ impl CanaryDeploymentManager {
         }
 
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Canary deployment '{}' not found", id)))?;
+        let deployment = deployments.get_mut(id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Canary deployment '{}' not found", id))
+        })?;
 
         deployment.traffic_split.stable_percentage = stable_percentage;
         deployment.traffic_split.canary_percentage = canary_percentage;
@@ -882,9 +892,9 @@ impl CanaryDeploymentManager {
     /// Promote canary to stable
     pub async fn promote_canary(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Canary deployment '{}' not found", id)))?;
+        let deployment = deployments.get_mut(id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Canary deployment '{}' not found", id))
+        })?;
 
         deployment.canary_deployment.status = DeploymentStatus::Running;
         deployment.stable_deployment = deployment.canary_deployment.clone();
@@ -902,15 +912,14 @@ impl CanaryDeploymentManager {
     /// Rollback canary deployment
     pub async fn rollback_canary(&self, id: &str) -> CanvasResult<()> {
         let mut deployments = self.deployments.lock().unwrap();
-        let deployment = deployments
-            .get_mut(id)
-            .ok_or_else(|| CanvasError::NotFound(format!("Canary deployment '{}' not found", id)))?;
+        let deployment = deployments.get_mut(id).ok_or_else(|| {
+            CanvasError::NotFound(format!("Canary deployment '{}' not found", id))
+        })?;
 
         deployment.traffic_split.stable_percentage = 100.0;
         deployment.traffic_split.canary_percentage = 0.0;
-        deployment.canary_deployment.status = DeploymentStatus::Failed(
-            "Rolled back by deployment manager".to_string(),
-        );
+        deployment.canary_deployment.status =
+            DeploymentStatus::Failed("Rolled back by deployment manager".to_string());
         deployment.canary_deployment.updated_at = unix_timestamp_secs();
 
         Ok(())
@@ -943,7 +952,9 @@ impl InfrastructureManager {
         let templates = self.templates.lock().unwrap();
         let template = templates
             .get(template_name)
-            .ok_or_else(|| CanvasError::NotFound(format!("Template '{}' not found", template_name)))?
+            .ok_or_else(|| {
+                CanvasError::NotFound(format!("Template '{}' not found", template_name))
+            })?
             .clone();
         drop(templates);
 

@@ -486,7 +486,9 @@ impl LoopOptimizationPass {
     ) -> CanvasResult<Vec<Vec<NodeId>>> {
         let mut adj = HashMap::new();
         for edge in edges {
-            adj.entry(edge.source_node).or_insert_with(Vec::new).push(edge.target_node);
+            adj.entry(edge.source_node)
+                .or_insert_with(Vec::new)
+                .push(edge.target_node);
         }
 
         let mut visited = HashMap::new(); // NodeId -> state (0: White, 1: Gray, 2: Black)
@@ -536,11 +538,7 @@ impl LoopOptimizationPass {
         Ok(loops)
     }
 
-    fn can_optimize_loop(
-        &self,
-        loop_nodes: &[NodeId],
-        graph: &VisualGraph,
-    ) -> CanvasResult<bool> {
+    fn can_optimize_loop(&self, loop_nodes: &[NodeId], graph: &VisualGraph) -> CanvasResult<bool> {
         for &node_id in loop_nodes {
             if let Some(node) = graph.get_node(node_id) {
                 let nt = NodeType::from(node.node_type.as_str());
@@ -549,8 +547,7 @@ impl LoopOptimizationPass {
                     NodeType::Arithmetic => {
                         let mut all_inputs_outside = true;
                         for conn in &graph.connections {
-                            if conn.target_node == node_id
-                                && loop_nodes.contains(&conn.source_node)
+                            if conn.target_node == node_id && loop_nodes.contains(&conn.source_node)
                             {
                                 all_inputs_outside = false;
                                 break;
@@ -806,7 +803,7 @@ impl ParallelExecutionOptimizer {
 
         if processed_count < nodes.len() {
             return Err(crate::error::CanvasError::Graph(
-                "Cycle detected in dependency graph".to_string()
+                "Cycle detected in dependency graph".to_string(),
             ));
         }
 
@@ -1178,10 +1175,22 @@ mod tests {
 
         // Acyclical graph: A -> B -> C
         let mut graph = VisualGraph::new("acyclic");
-        let a = VisualNode::new(uuid::Uuid::new_v4(), "Start", crate::types::Position::new(0.0, 0.0));
-        let b = VisualNode::new(uuid::Uuid::new_v4(), "Add", crate::types::Position::new(0.0, 0.0));
-        let c = VisualNode::new(uuid::Uuid::new_v4(), "End", crate::types::Position::new(0.0, 0.0));
-        
+        let a = VisualNode::new(
+            uuid::Uuid::new_v4(),
+            "Start",
+            crate::types::Position::new(0.0, 0.0),
+        );
+        let b = VisualNode::new(
+            uuid::Uuid::new_v4(),
+            "Add",
+            crate::types::Position::new(0.0, 0.0),
+        );
+        let c = VisualNode::new(
+            uuid::Uuid::new_v4(),
+            "End",
+            crate::types::Position::new(0.0, 0.0),
+        );
+
         let a_id = a.id;
         let b_id = b.id;
         let c_id = c.id;
@@ -1190,8 +1199,20 @@ mod tests {
         graph.add_node(b);
         graph.add_node(c);
 
-        graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), a_id, "flow_out", b_id, "flow_in"));
-        graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), b_id, "flow_out", c_id, "flow_in"));
+        graph.add_connection(crate::types::Connection::new(
+            uuid::Uuid::new_v4(),
+            a_id,
+            "flow_out",
+            b_id,
+            "flow_in",
+        ));
+        graph.add_connection(crate::types::Connection::new(
+            uuid::Uuid::new_v4(),
+            b_id,
+            "flow_out",
+            c_id,
+            "flow_in",
+        ));
 
         let plan = optimizer.generate_plan(&graph).unwrap();
         assert_eq!(plan.stages.len(), 3);
@@ -1205,8 +1226,20 @@ mod tests {
         let b_node = VisualNode::new(b_id, "Subtract", crate::types::Position::new(0.0, 0.0));
         cyclical_graph.add_node(a_node);
         cyclical_graph.add_node(b_node);
-        cyclical_graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), a_id, "flow_out", b_id, "flow_in"));
-        cyclical_graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), b_id, "flow_out", a_id, "flow_in"));
+        cyclical_graph.add_connection(crate::types::Connection::new(
+            uuid::Uuid::new_v4(),
+            a_id,
+            "flow_out",
+            b_id,
+            "flow_in",
+        ));
+        cyclical_graph.add_connection(crate::types::Connection::new(
+            uuid::Uuid::new_v4(),
+            b_id,
+            "flow_out",
+            a_id,
+            "flow_in",
+        ));
 
         let plan_err = optimizer.generate_plan(&cyclical_graph);
         assert!(plan_err.is_err());
@@ -1216,23 +1249,37 @@ mod tests {
     fn test_loop_detection_and_optimization() {
         let pass = LoopOptimizationPass;
         let mut graph = VisualGraph::new("loop");
-        
+
         let a_id = uuid::Uuid::new_v4();
         let b_id = uuid::Uuid::new_v4();
-        
+
         let a = VisualNode::new(a_id, "ReadStorage", crate::types::Position::new(0.0, 0.0));
         let b = VisualNode::new(b_id, "Add", crate::types::Position::new(0.0, 0.0));
-        
+
         graph.add_node(a);
         graph.add_node(b);
-        
-        graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), a_id, "flow_out", b_id, "flow_in"));
-        graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), b_id, "flow_out", a_id, "flow_in"));
-        
-        let loops = pass.find_loops(graph.get_nodes(), graph.get_connections()).unwrap();
+
+        graph.add_connection(crate::types::Connection::new(
+            uuid::Uuid::new_v4(),
+            a_id,
+            "flow_out",
+            b_id,
+            "flow_in",
+        ));
+        graph.add_connection(crate::types::Connection::new(
+            uuid::Uuid::new_v4(),
+            b_id,
+            "flow_out",
+            a_id,
+            "flow_in",
+        ));
+
+        let loops = pass
+            .find_loops(graph.get_nodes(), graph.get_connections())
+            .unwrap();
         assert!(!loops.is_empty());
         assert_eq!(loops[0].len(), 2);
-        
+
         // Loop contains ReadStorage (State), so it should be optimizable
         let optimizable = pass.can_optimize_loop(&loops[0], &graph).unwrap();
         assert!(optimizable);

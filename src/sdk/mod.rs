@@ -97,7 +97,10 @@ impl PluginRegistry {
 
     /// Get all plugins
     pub fn get_all_plugins(&self) -> Vec<&dyn CanvasPlugin> {
-        self.plugins.values().map(|plugin| plugin.as_ref()).collect()
+        self.plugins
+            .values()
+            .map(|plugin| plugin.as_ref())
+            .collect()
     }
 
     /// Get plugins by capability
