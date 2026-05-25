@@ -557,6 +557,12 @@ pub struct LocalMarketplace {
     tutorials: HashMap<String, TutorialItem>,
 }
 
+impl Default for LocalMarketplace {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LocalMarketplace {
     /// Create a new local marketplace
     pub fn new() -> Self {
@@ -643,10 +649,10 @@ impl LocalMarketplace {
                         .iter()
                         .any(|tag| tag.to_lowercase().contains(&query.to_lowercase()));
 
-                let matches_type = filters.item_type.as_ref().map_or(true, |t| {
+                let matches_type = filters.item_type.as_ref().is_none_or(|t| {
                     std::mem::discriminant(&item.item_type) == std::mem::discriminant(t)
                 });
-                let matches_rating = filters.min_rating.map_or(true, |r| item.rating >= r);
+                let matches_rating = filters.min_rating.is_none_or(|r| item.rating >= r);
                 let matches_price = !filters.free_only || item.price.is_none();
 
                 matches_query && matches_type && matches_rating && matches_price

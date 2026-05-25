@@ -191,7 +191,7 @@ impl OptimizationEngine {
         for window in nodes.windows(pattern.len()) {
             let window_types: Vec<NodeType> = window.iter().map(|n| n.node_type.clone()).collect();
             if window_types == pattern {
-                matching_nodes.extend(window.iter().map(|n| n.id.clone()));
+                matching_nodes.extend(window.iter().map(|n| n.id));
                 return Some(matching_nodes);
             }
         }
@@ -217,7 +217,7 @@ impl OptimizationEngine {
                 title: "Reduce State Operations".to_string(),
                 description: "Consider batching state operations to reduce gas costs".to_string(),
                 estimated_gas_savings: (state_nodes.len() as u64 - 5) * 5000,
-                nodes: state_nodes.iter().map(|n| n.id.clone()).collect(),
+                nodes: state_nodes.iter().map(|n| n.id).collect(),
                 implementation: "Batch multiple state updates into a single operation".to_string(),
             });
         }
@@ -232,7 +232,7 @@ impl OptimizationEngine {
                 title: "Optimize External Calls".to_string(),
                 description: "Consider caching external call results".to_string(),
                 estimated_gas_savings: (external_nodes.len() as u64 - 3) * 1000,
-                nodes: external_nodes.iter().map(|n| n.id.clone()).collect(),
+                nodes: external_nodes.iter().map(|n| n.id).collect(),
                 implementation: "Cache external call results in state variables".to_string(),
             });
         }
@@ -247,7 +247,7 @@ impl OptimizationEngine {
                 title: "Optimize Arithmetic Operations".to_string(),
                 description: "Consider using bit shifting for power-of-2 operations".to_string(),
                 estimated_gas_savings: arithmetic_nodes.len() as u64 * 10,
-                nodes: arithmetic_nodes.iter().map(|n| n.id.clone()).collect(),
+                nodes: arithmetic_nodes.iter().map(|n| n.id).collect(),
                 implementation: "Replace multiplication/division by powers of 2 with bit shifts"
                     .to_string(),
             });

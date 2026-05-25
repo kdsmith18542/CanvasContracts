@@ -227,14 +227,14 @@ impl MetricsCollector {
                         store
                             .histograms
                             .entry(name)
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(value);
                     }
                     MetricEvent::RecordTimer(name, duration) => {
                         store
                             .timers
                             .entry(name)
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(duration);
                     }
                 }
@@ -842,7 +842,7 @@ impl AutoScalingManager {
             if let Some(value) = metrics.gauges.get(&rule.metric) {
                 let cooldown_ok = last_execution
                     .get(&rule.name)
-                    .map_or(true, |last| now.duration_since(*last) >= rule.cooldown);
+                    .is_none_or(|last| now.duration_since(*last) >= rule.cooldown);
                 if *value > rule.threshold && cooldown_ok {
                     actions.push(rule.action.clone());
                     last_execution.insert(rule.name.clone(), now);

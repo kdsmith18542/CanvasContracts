@@ -76,6 +76,12 @@ pub struct CustomNodeRegistry {
     wasm_modules: HashMap<String, WasmModule>,
 }
 
+impl Default for CustomNodeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CustomNodeRegistry {
     /// Create a new custom node registry
     pub fn new() -> Self {
@@ -206,7 +212,7 @@ impl CustomNodeRegistry {
                 wasm_info.module_path
             )));
         }
-        Ok(WasmModule::new(&wasm_info.module_path)?)
+        WasmModule::new(&wasm_info.module_path)
     }
 
     /// Execute composite node

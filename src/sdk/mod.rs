@@ -91,23 +91,24 @@ impl PluginRegistry {
     }
 
     /// Get a plugin by name
-    pub fn get_plugin(&self, name: &str) -> Option<&Box<dyn CanvasPlugin>> {
-        self.plugins.get(name)
+    pub fn get_plugin(&self, name: &str) -> Option<&dyn CanvasPlugin> {
+        self.plugins.get(name).map(|plugin| plugin.as_ref())
     }
 
     /// Get all plugins
-    pub fn get_all_plugins(&self) -> Vec<&Box<dyn CanvasPlugin>> {
-        self.plugins.values().collect()
+    pub fn get_all_plugins(&self) -> Vec<&dyn CanvasPlugin> {
+        self.plugins.values().map(|plugin| plugin.as_ref()).collect()
     }
 
     /// Get plugins by capability
     pub fn get_plugins_by_capability(
         &self,
         capability: &PluginCapability,
-    ) -> Vec<&Box<dyn CanvasPlugin>> {
+    ) -> Vec<&dyn CanvasPlugin> {
         self.plugins
             .values()
             .filter(|plugin| plugin.capabilities().contains(capability))
+            .map(|plugin| plugin.as_ref())
             .collect()
     }
 
@@ -129,6 +130,12 @@ impl PluginRegistry {
 pub struct GraphBuilder {
     graph: VisualGraph,
     node_counter: u32,
+}
+
+impl Default for GraphBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GraphBuilder {

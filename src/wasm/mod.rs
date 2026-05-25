@@ -684,6 +684,38 @@ pub struct PerformanceAnalysis {
     pub optimization_suggestions: Vec<String>,
 }
 
+/// WASM module wrapper for custom node execution.
+pub struct WasmModule {
+    path: String,
+    bytes: Vec<u8>,
+}
+
+impl WasmModule {
+    pub fn new(path: &str) -> CanvasResult<Self> {
+        let bytes = std::fs::read(path).map_err(|e| {
+            CanvasError::Io(std::io::Error::new(
+                e.kind(),
+                format!("Failed to read WASM module '{}': {}", path, e),
+            ))
+        })?;
+        let engine = wasmtime::Engine::default();
+        wasmtime::Module::validate(&engine, &bytes)
+            .map_err(|e| CanvasError::Wasm(format!("Invalid WASM module '{}': {}", path, e)))?;
+        Ok(Self {
+            path: path.to_string(),
+            bytes,
+        })
+    }
+
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1267,37 +1299,5 @@ mod tests {
             result.is_err(),
             "Should fail with fuel exhaustion when using only 1 fuel unit"
         );
-    }
-}
-
-/// WASM module wrapper for custom node execution.
-pub struct WasmModule {
-    path: String,
-    bytes: Vec<u8>,
-}
-
-impl WasmModule {
-    pub fn new(path: &str) -> CanvasResult<Self> {
-        let bytes = std::fs::read(path).map_err(|e| {
-            CanvasError::Io(std::io::Error::new(
-                e.kind(),
-                format!("Failed to read WASM module '{}': {}", path, e),
-            ))
-        })?;
-        let engine = wasmtime::Engine::default();
-        wasmtime::Module::validate(&engine, &bytes)
-            .map_err(|e| CanvasError::Wasm(format!("Invalid WASM module '{}': {}", path, e)))?;
-        Ok(Self {
-            path: path.to_string(),
-            bytes,
-        })
-    }
-
-    pub fn path(&self) -> &str {
-        &self.path
-    }
-
-    pub fn bytes(&self) -> &[u8] {
-        &self.bytes
     }
 }

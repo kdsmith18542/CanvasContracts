@@ -226,7 +226,7 @@ impl PatternRecognitionEngine {
 
         for node in &nodes {
             if pattern.node_sequence.contains(&node.node_type) {
-                pattern_nodes.push(node.id.clone());
+                pattern_nodes.push(node.id);
             }
         }
 
@@ -245,7 +245,7 @@ impl PatternRecognitionEngine {
         for window in nodes.windows(anti_pattern.pattern.len()) {
             let window_types: Vec<NodeType> = window.iter().map(|n| n.node_type.clone()).collect();
             if window_types == anti_pattern.pattern {
-                anti_pattern_nodes.extend(window.iter().map(|n| n.id.clone()));
+                anti_pattern_nodes.extend(window.iter().map(|n| n.id));
             }
         }
 
@@ -264,7 +264,7 @@ impl PatternRecognitionEngine {
         for window in nodes.windows(security_pattern.pattern.len()) {
             let window_types: Vec<NodeType> = window.iter().map(|n| n.node_type.clone()).collect();
             if window_types == security_pattern.pattern {
-                security_pattern_nodes.extend(window.iter().map(|n| n.id.clone()));
+                security_pattern_nodes.extend(window.iter().map(|n| n.id));
             }
         }
 

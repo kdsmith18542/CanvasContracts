@@ -311,8 +311,8 @@ impl OptimizationPass for DeadCodeEliminationPass {
         // Find start nodes
         for node in nodes {
             if node.node_type == "Start" {
-                to_visit.push(node.id.clone());
-                reachable_nodes.insert(node.id.clone());
+                to_visit.push(node.id);
+                reachable_nodes.insert(node.id);
             }
         }
 
@@ -320,8 +320,8 @@ impl OptimizationPass for DeadCodeEliminationPass {
         while let Some(node_id) = to_visit.pop() {
             for edge in edges {
                 if edge.source_node == node_id && !reachable_nodes.contains(&edge.target_node) {
-                    reachable_nodes.insert(edge.target_node.clone());
-                    to_visit.push(edge.target_node.clone());
+                    reachable_nodes.insert(edge.target_node);
+                    to_visit.push(edge.target_node);
                 }
             }
         }
@@ -330,7 +330,7 @@ impl OptimizationPass for DeadCodeEliminationPass {
         let unreachable_nodes: Vec<_> = nodes
             .iter()
             .filter(|node| !reachable_nodes.contains(&node.id))
-            .map(|node| node.id.clone())
+            .map(|node| node.id)
             .collect();
 
         let gas_savings = unreachable_nodes.len() as u64 * 100; // Estimate gas savings
@@ -382,7 +382,7 @@ impl OptimizationPass for ConstantFoldingPass {
                 // Check if all inputs are constants
                 let inputs: HashMap<String, serde_json::Value> = node.properties.clone();
                 if inputs.iter().all(|(_, value)| value.is_number()) {
-                    folded_nodes.push(node.id.clone());
+                    folded_nodes.push(node.id);
                 }
             }
         }
@@ -549,11 +549,11 @@ impl LoopOptimizationPass {
                     NodeType::Arithmetic => {
                         let mut all_inputs_outside = true;
                         for conn in &graph.connections {
-                            if conn.target_node == node_id {
-                                if loop_nodes.contains(&conn.source_node) {
-                                    all_inputs_outside = false;
-                                    break;
-                                }
+                            if conn.target_node == node_id
+                                && loop_nodes.contains(&conn.source_node)
+                            {
+                                all_inputs_outside = false;
+                                break;
                             }
                         }
                         if all_inputs_outside {
@@ -582,7 +582,7 @@ impl OptimizationPass for MemoryOptimizationPass {
         for node in nodes {
             if node.node_type == "State" {
                 // Storage operations are memory-intensive
-                memory_optimized_nodes.push(node.id.clone());
+                memory_optimized_nodes.push(node.id);
             }
         }
 
@@ -639,7 +639,7 @@ impl OptimizationPass for CacheOptimizationPass {
                 .push(node.id);
         }
 
-        for (_operation, node_ids) in &operation_counts {
+        for node_ids in operation_counts.values() {
             if node_ids.len() > 1 {
                 cache_optimized_nodes.extend(node_ids.iter().cloned());
             }
@@ -694,12 +694,12 @@ impl ParallelExecutionOptimizer {
         let edges = graph.get_connections();
 
         // Build dependency graph
-        let mut dependencies = HashMap::new();
+        let mut dependencies: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
         for edge in edges {
             dependencies
-                .entry(edge.target_node.clone())
-                .or_insert_with(Vec::new)
-                .push(edge.source_node.clone());
+                .entry(edge.target_node)
+                .or_default()
+                .push(edge.source_node);
         }
 
         // Topological sort to find execution stages

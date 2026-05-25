@@ -191,6 +191,17 @@ pub struct Tutorial {
     pub status: TutorialStatus,
 }
 
+/// Tutorial creation payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TutorialDraft {
+    pub title: String,
+    pub content: String,
+    pub difficulty: TutorialDifficulty,
+    pub duration_minutes: u32,
+    pub prerequisites: Vec<String>,
+    pub tags: Vec<String>,
+}
+
 /// Tutorial difficulty
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TutorialDifficulty {
@@ -214,6 +225,12 @@ pub struct CommunityManager {
     comments: HashMap<String, Comment>,
     forum_posts: HashMap<String, ForumPost>,
     tutorials: HashMap<String, Tutorial>,
+}
+
+impl Default for CommunityManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CommunityManager {
@@ -550,22 +567,15 @@ impl CommunityManager {
     pub fn get_forum_posts(&self, category: Option<&str>) -> Vec<&ForumPost> {
         self.forum_posts
             .values()
-            .filter(|p| {
-                category.map_or(true, |c| p.category == c) && p.status == PostStatus::Active
-            })
+            .filter(|p| category.is_none_or(|c| p.category == c) && p.status == PostStatus::Active)
             .collect()
     }
 
     /// Create tutorial
     pub fn create_tutorial(
         &mut self,
-        title: String,
-        content: String,
         author_id: String,
-        difficulty: TutorialDifficulty,
-        duration_minutes: u32,
-        prerequisites: Vec<String>,
-        tags: Vec<String>,
+        draft: TutorialDraft,
     ) -> CanvasResult<String> {
         if !self.users.contains_key(&author_id) {
             return Err(CanvasError::NotFound(format!(
@@ -579,13 +589,13 @@ impl CommunityManager {
 
         let tutorial = Tutorial {
             id: tutorial_id.clone(),
-            title,
-            content,
+            title: draft.title,
+            content: draft.content,
             author_id,
-            difficulty,
-            duration_minutes,
-            prerequisites,
-            tags,
+            difficulty: draft.difficulty,
+            duration_minutes: draft.duration_minutes,
+            prerequisites: draft.prerequisites,
+            tags: draft.tags,
             created_at: now,
             updated_at: now,
             views: 0,
@@ -602,7 +612,7 @@ impl CommunityManager {
         self.tutorials
             .values()
             .filter(|t| {
-                difficulty.as_ref().map_or(true, |d| {
+                difficulty.as_ref().is_none_or(|d| {
                     std::mem::discriminant(&t.difficulty) == std::mem::discriminant(d)
                 }) && t.status == TutorialStatus::Published
             })

@@ -398,7 +398,6 @@ impl RuleBasedValidator {
 
         fn dfs(
             node_id: &NodeId,
-            nodes: &[crate::types::Node],
             edges: &[crate::types::Edge],
             visited: &mut std::collections::HashSet<NodeId>,
             rec_stack: &mut std::collections::HashSet<NodeId>,
@@ -410,15 +409,13 @@ impl RuleBasedValidator {
                 return false;
             }
 
-            visited.insert(node_id.clone());
-            rec_stack.insert(node_id.clone());
+            visited.insert(*node_id);
+            rec_stack.insert(*node_id);
 
             // Find all outgoing edges
             for edge in edges {
-                if edge.source == *node_id {
-                    if dfs(&edge.target, nodes, edges, visited, rec_stack) {
-                        return true;
-                    }
+                if edge.source == *node_id && dfs(&edge.target, edges, visited, rec_stack) {
+                    return true;
                 }
             }
 
@@ -427,10 +424,10 @@ impl RuleBasedValidator {
         }
 
         for node in &nodes {
-            if !visited.contains(&node.id) {
-                if dfs(&node.id, &nodes, &edges, &mut visited, &mut rec_stack) {
-                    return true;
-                }
+            if !visited.contains(&node.id)
+                && dfs(&node.id, &edges, &mut visited, &mut rec_stack)
+            {
+                return true;
             }
         }
 
@@ -452,15 +449,15 @@ impl RuleBasedValidator {
         // BFS from start nodes
         let mut queue = std::collections::VecDeque::new();
         for start_node in start_nodes {
-            queue.push_back(start_node.id.clone());
-            reachable.insert(start_node.id.clone());
+            queue.push_back(start_node.id);
+            reachable.insert(start_node.id);
         }
 
         while let Some(current_id) = queue.pop_front() {
             for edge in &edges {
                 if edge.source == current_id && !reachable.contains(&edge.target) {
-                    reachable.insert(edge.target.clone());
-                    queue.push_back(edge.target.clone());
+                    reachable.insert(edge.target);
+                    queue.push_back(edge.target);
                 }
             }
         }
@@ -469,7 +466,7 @@ impl RuleBasedValidator {
         nodes
             .iter()
             .filter(|n| !reachable.contains(&n.id))
-            .map(|n| n.id.clone())
+            .map(|n| n.id)
             .collect()
     }
 
@@ -499,7 +496,7 @@ impl RuleBasedValidator {
             };
 
             if incoming_count < required_inputs {
-                missing_inputs.push(node.id.clone());
+                missing_inputs.push(node.id);
             }
         }
 
