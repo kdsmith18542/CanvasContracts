@@ -5,6 +5,7 @@
 
 // ── Core modules ─────────────────────────────────────────────────────
 pub mod adapter;
+pub mod artifact;
 pub mod baals;
 pub mod compiler;
 pub mod config;
@@ -33,6 +34,7 @@ pub use adapter::{
     create_chrononode_client, BaaLSAdapter, ChronoNodeClient, HttpChronoNodeClient, LedgerAdapter,
     MockChronoNodeClient, RuntimeInfo,
 };
+pub use artifact::{build_artifact_bundle, verify_artifact_manifest};
 pub use baals::{create_client, sign_payload, BaalsClient, MockBaalsClient};
 /// Re-export commonly used types
 pub use compiler::Compiler;

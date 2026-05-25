@@ -1,0 +1,7 @@
+interface storage {
+  use types.{storage-error};
+
+  read: func(key: string) -> result<option<list<u8>>, storage-error>;
+  write: func(key: string, value: list<u8>) -> result<_, storage-error>;
+  delete: func(key: string) -> result<_, storage-error>;
+}

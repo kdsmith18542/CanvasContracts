@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use log::{error, info};
 
 use canvas_contracts::{
+    artifact::{build_artifact_bundle, verify_artifact_manifest},
     compiler::{Compiler, GraphExecutor},
     config::ConfigManager,
     error::{CanvasError, CanvasResult},
@@ -104,6 +105,32 @@ enum Commands {
         #[arg(short, long)]
         input: String,
     },
+
+    /// Build and verify contract artifacts
+    Artifact {
+        #[command(subcommand)]
+        action: ArtifactCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ArtifactCommands {
+    /// Build a verifiable artifact bundle from a graph
+    Build {
+        /// Input graph file
+        #[arg(short, long)]
+        input: String,
+
+        /// Output directory for bundle files
+        #[arg(short, long)]
+        out: String,
+    },
+    /// Verify artifact manifest hashes against local files
+    Verify {
+        /// Path to canvas.contract.json
+        #[arg(short, long)]
+        manifest: String,
+    },
 }
 
 fn main() -> CanvasResult<()> {
@@ -158,12 +185,64 @@ fn main() -> CanvasResult<()> {
 
         Some(Commands::Validate { input }) => validate_graph(input, &config_manager)?,
 
+        Some(Commands::Artifact { action }) => match action {
+            ArtifactCommands::Build { input, out } => {
+                build_artifact(input, out, &config_manager)?;
+            }
+            ArtifactCommands::Verify { manifest } => {
+                verify_artifact(manifest, &config_manager)?;
+            }
+        },
+
         None => {
             // Default: start the visual editor
             start_editor(3000, "localhost", &config_manager)?
         }
     }
 
+    Ok(())
+}
+
+fn build_artifact(input: &str, out: &str, config_manager: &ConfigManager) -> CanvasResult<()> {
+    info!("Building artifact bundle from {} into {}", input, out);
+
+    let graph_content = std::fs::read_to_string(input).map_err(CanvasError::Io)?;
+    let graph: VisualGraph =
+        serde_json::from_str(&graph_content).map_err(CanvasError::Serialization)?;
+
+    let output = build_artifact_bundle(&graph, config_manager.config(), std::path::Path::new(out))?;
+
+    info!("Artifact bundle built successfully");
+    info!("Graph file: {}", output.graph_path.display());
+    info!(
+        "Canonical graph file: {}",
+        output.canonical_graph_path.display()
+    );
+    info!(
+        "Node-pack lock file: {}",
+        output.node_pack_lock_path.display()
+    );
+    info!("WASM file: {}", output.wasm_path.display());
+    info!("ABI file: {}", output.abi_path.display());
+    info!("WIT directory: {}", output.wit_dir.display());
+    info!(
+        "Safety report file: {}",
+        output.safety_report_path.display()
+    );
+    info!("Manifest file: {}", output.manifest_path.display());
+    Ok(())
+}
+
+fn verify_artifact(manifest: &str, _config_manager: &ConfigManager) -> CanvasResult<()> {
+    info!("Verifying artifact manifest {}", manifest);
+    let result = verify_artifact_manifest(std::path::Path::new(manifest))?;
+    info!("Artifact verification status: {}", result.status);
+    info!("Graph hash: {}", result.graph_hash);
+    info!("Node-pack lock hash: {}", result.node_pack_lock_hash);
+    info!("WASM hash: {}", result.wasm_hash);
+    info!("WIT hash: {}", result.wit_hash);
+    info!("ABI hash: {}", result.json_abi_hash);
+    info!("Safety report hash: {}", result.safety_report_hash);
     Ok(())
 }
 

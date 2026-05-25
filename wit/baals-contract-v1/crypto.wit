@@ -1,0 +1,4 @@
+interface crypto {
+  verify-ed25519: func(pubkey: list<u8>, message: list<u8>, signature: list<u8>) -> bool;
+  sha256: func(input: list<u8>) -> list<u8>;
+}

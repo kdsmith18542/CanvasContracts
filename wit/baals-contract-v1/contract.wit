@@ -1,0 +1,9 @@
+world baals-contract {
+  import storage;
+  import crypto;
+  import proof;
+
+  export init: func(args: list<u8>) -> result<_, string>;
+  export call: func(method: string, args: list<list<u8>>) -> result<list<u8>, string>;
+  export query: func(method: string, args: list<list<u8>>) -> result<list<u8>, string>;
+}

@@ -1,0 +1,18 @@
+interface types {
+  type address = list<u8>;
+  type bytes32 = list<u8>;
+
+  record call-context {
+    caller: address,
+    contract: address,
+    value: u64,
+    gas-limit: u64,
+  }
+
+  variant storage-error {
+    not-found,
+    permission-denied,
+    invalid-key,
+    host-error(string),
+  }
+}

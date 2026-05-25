@@ -100,6 +100,44 @@ canvas-contracts deploy --contract out.wasm --key my-key
 canvas-contracts deploy --contract out.wasm --key my-key --args '{"name": "test"}'
 ```
 
+### `artifact build`
+
+Build a verifiable contract artifact bundle from a graph.
+
+```bash
+canvas-contracts artifact build --input <FILE> --out <DIR>
+```
+
+| Option | Description |
+|--------|-------------|
+| `-i, --input <FILE>` | Input graph JSON file |
+| `-o, --out <DIR>` | Output directory for generated bundle files |
+
+**Example:**
+```bash
+canvas-contracts artifact build --input tests/fixtures/dormancy_oracle.json --out dist/contracts/DormancyOracle
+```
+
+Generated files include:
+`graph.json`, `graph.canonical.json`, `node-pack.lock`, `contract.wasm`, `abi.json`, `safety-report.json`, `canvas.contract.json`, and `wit/*.wit`.
+
+### `artifact verify`
+
+Verify manifest integrity by recomputing hashes from local artifact files.
+
+```bash
+canvas-contracts artifact verify --manifest <FILE>
+```
+
+| Option | Description |
+|--------|-------------|
+| `-m, --manifest <FILE>` | Path to `canvas.contract.json` |
+
+**Example:**
+```bash
+canvas-contracts artifact verify --manifest dist/contracts/DormancyOracle/canvas.contract.json
+```
+
 ### `editor`
 
 Start the visual editor server.
@@ -136,6 +174,8 @@ canvas-contracts validate --input contract.json
 canvas-contracts compile --input contract.json --output out.wasm
 canvas-contracts simulate --graph tests/fixtures/simple_arithmetic.json
 canvas-contracts deploy --contract out.wasm --key my-key
+canvas-contracts artifact build --input tests/fixtures/dormancy_oracle.json --out dist/contracts/DormancyOracle
+canvas-contracts artifact verify --manifest dist/contracts/DormancyOracle/canvas.contract.json
 canvas-contracts editor
 canvas-contracts info
 ```
