@@ -3,7 +3,7 @@
 use crate::{
     config::Config,
     error::CanvasResult,
-    types::{Connection, NodeId, VisualGraph, VisualNode},
+    types::{Connection, NodeId, NodeType, VisualGraph, VisualNode},
 };
 
 use serde::{Deserialize, Serialize};
@@ -481,19 +481,89 @@ impl OptimizationPass for LoopOptimizationPass {
 impl LoopOptimizationPass {
     fn find_loops(
         &self,
-        _nodes: &[VisualNode],
-        _edges: &[Connection],
+        nodes: &[VisualNode],
+        edges: &[Connection],
     ) -> CanvasResult<Vec<Vec<NodeId>>> {
-        // TODO: Implement actual loop detection using DFS
-        Ok(Vec::new())
+        let mut adj = HashMap::new();
+        for edge in edges {
+            adj.entry(edge.source_node).or_insert_with(Vec::new).push(edge.target_node);
+        }
+
+        let mut visited = HashMap::new(); // NodeId -> state (0: White, 1: Gray, 2: Black)
+        for node in nodes {
+            visited.insert(node.id, 0);
+        }
+
+        let mut stack = Vec::new();
+        let mut loops = Vec::new();
+
+        fn dfs(
+            u: NodeId,
+            adj: &HashMap<NodeId, Vec<NodeId>>,
+            visited: &mut HashMap<NodeId, i32>,
+            stack: &mut Vec<NodeId>,
+            loops: &mut Vec<Vec<NodeId>>,
+        ) {
+            visited.insert(u, 1);
+            stack.push(u);
+
+            if let Some(neighbors) = adj.get(&u) {
+                for &v in neighbors {
+                    if let Some(&state) = visited.get(&v) {
+                        if state == 1 {
+                            // Cycle detected!
+                            if let Some(pos) = stack.iter().position(|&x| x == v) {
+                                let cycle = stack[pos..].to_vec();
+                                loops.push(cycle);
+                            }
+                        } else if state == 0 {
+                            dfs(v, adj, visited, stack, loops);
+                        }
+                    }
+                }
+            }
+
+            stack.pop();
+            visited.insert(u, 2);
+        }
+
+        for node in nodes {
+            if visited.get(&node.id) == Some(&0) {
+                dfs(node.id, &adj, &mut visited, &mut stack, &mut loops);
+            }
+        }
+
+        Ok(loops)
     }
 
     fn can_optimize_loop(
         &self,
-        _loop_nodes: &[NodeId],
-        _graph: &VisualGraph,
+        loop_nodes: &[NodeId],
+        graph: &VisualGraph,
     ) -> CanvasResult<bool> {
-        // TODO: Implement loop optimization analysis
+        for &node_id in loop_nodes {
+            if let Some(node) = graph.get_node(node_id) {
+                let nt = NodeType::from(node.node_type.as_str());
+                match nt {
+                    NodeType::State | NodeType::External => return Ok(true),
+                    NodeType::Arithmetic => {
+                        let mut all_inputs_outside = true;
+                        for conn in &graph.connections {
+                            if conn.target_node == node_id {
+                                if loop_nodes.contains(&conn.source_node) {
+                                    all_inputs_outside = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if all_inputs_outside {
+                            return Ok(true);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
         Ok(false)
     }
 }
@@ -651,21 +721,93 @@ impl ParallelExecutionOptimizer {
     fn topological_sort(
         &self,
         nodes: &[VisualNode],
-        _dependencies: &HashMap<NodeId, Vec<NodeId>>,
+        dependencies: &HashMap<NodeId, Vec<NodeId>>,
     ) -> CanvasResult<Vec<ExecutionStage>> {
-        // TODO: Implement actual topological sort
-        let mut stages = Vec::new();
+        let mut adj = HashMap::new();
+        let mut in_degree = HashMap::new();
 
-        // Simple stage assignment for now
-        let mut stage_id = 0;
+        // Initialize in_degree and adj
         for node in nodes {
+            in_degree.insert(node.id, 0);
+            adj.insert(node.id, Vec::new());
+        }
+
+        for (&target, sources) in dependencies {
+            if in_degree.contains_key(&target) {
+                for &source in sources {
+                    if in_degree.contains_key(&source) {
+                        adj.entry(source).or_default().push(target);
+                        *in_degree.entry(target).or_default() += 1;
+                    }
+                }
+            }
+        }
+
+        let mut stages = Vec::new();
+        let mut current_stage_nodes = Vec::new();
+
+        for node in nodes {
+            if in_degree[&node.id] == 0 {
+                current_stage_nodes.push(node.id);
+            }
+        }
+        current_stage_nodes.sort();
+
+        let mut processed_count = 0;
+        let mut stage_id = 0;
+        let mut node_to_stage = HashMap::new();
+
+        while !current_stage_nodes.is_empty() {
+            let mut next_stage_nodes = Vec::new();
+
+            for &node_id in &current_stage_nodes {
+                node_to_stage.insert(node_id, stage_id);
+            }
+
+            for &u in &current_stage_nodes {
+                processed_count += 1;
+                if let Some(neighbors) = adj.get(&u) {
+                    for &v in neighbors {
+                        if let Some(deg) = in_degree.get_mut(&v) {
+                            *deg -= 1;
+                            if *deg == 0 {
+                                next_stage_nodes.push(v);
+                            }
+                        }
+                    }
+                }
+            }
+            next_stage_nodes.sort();
+
+            // Find which stages this stage depends on
+            let mut stage_dependencies = std::collections::HashSet::new();
+            for &node_id in &current_stage_nodes {
+                if let Some(sources) = dependencies.get(&node_id) {
+                    for &source in sources {
+                        if let Some(&dep_stage) = node_to_stage.get(&source) {
+                            if dep_stage != stage_id {
+                                stage_dependencies.insert(dep_stage);
+                            }
+                        }
+                    }
+                }
+            }
+
             stages.push(ExecutionStage {
                 stage_id,
-                nodes: vec![node.id.clone()],
+                nodes: current_stage_nodes,
                 estimated_duration: 100, // Mock duration
-                dependencies: Vec::new(),
+                dependencies: stage_dependencies.into_iter().collect(),
             });
+
+            current_stage_nodes = next_stage_nodes;
             stage_id += 1;
+        }
+
+        if processed_count < nodes.len() {
+            return Err(crate::error::CanvasError::Graph(
+                "Cycle detected in dependency graph".to_string()
+            ));
         }
 
         Ok(stages)
@@ -1027,5 +1169,72 @@ mod tests {
         assert!(report.memory_usage.peak_memory <= report.memory_usage.peak_memory);
         assert!(report.cpu_usage.peak_cpu >= 0.0);
         assert!(report.gas_usage.total_gas <= report.gas_usage.total_gas);
+    }
+
+    #[test]
+    fn test_topological_sort_and_cycle_detection() {
+        let config = Config::default();
+        let optimizer = ParallelExecutionOptimizer::new(&config);
+
+        // Acyclical graph: A -> B -> C
+        let mut graph = VisualGraph::new("acyclic");
+        let a = VisualNode::new(uuid::Uuid::new_v4(), "Start", crate::types::Position::new(0.0, 0.0));
+        let b = VisualNode::new(uuid::Uuid::new_v4(), "Add", crate::types::Position::new(0.0, 0.0));
+        let c = VisualNode::new(uuid::Uuid::new_v4(), "End", crate::types::Position::new(0.0, 0.0));
+        
+        let a_id = a.id;
+        let b_id = b.id;
+        let c_id = c.id;
+
+        graph.add_node(a);
+        graph.add_node(b);
+        graph.add_node(c);
+
+        graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), a_id, "flow_out", b_id, "flow_in"));
+        graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), b_id, "flow_out", c_id, "flow_in"));
+
+        let plan = optimizer.generate_plan(&graph).unwrap();
+        assert_eq!(plan.stages.len(), 3);
+        assert_eq!(plan.stages[0].nodes, vec![a_id]);
+        assert_eq!(plan.stages[1].nodes, vec![b_id]);
+        assert_eq!(plan.stages[2].nodes, vec![c_id]);
+
+        // Cyclical graph: A -> B -> A
+        let mut cyclical_graph = VisualGraph::new("cyclical");
+        let a_node = VisualNode::new(a_id, "Add", crate::types::Position::new(0.0, 0.0));
+        let b_node = VisualNode::new(b_id, "Subtract", crate::types::Position::new(0.0, 0.0));
+        cyclical_graph.add_node(a_node);
+        cyclical_graph.add_node(b_node);
+        cyclical_graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), a_id, "flow_out", b_id, "flow_in"));
+        cyclical_graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), b_id, "flow_out", a_id, "flow_in"));
+
+        let plan_err = optimizer.generate_plan(&cyclical_graph);
+        assert!(plan_err.is_err());
+    }
+
+    #[test]
+    fn test_loop_detection_and_optimization() {
+        let pass = LoopOptimizationPass;
+        let mut graph = VisualGraph::new("loop");
+        
+        let a_id = uuid::Uuid::new_v4();
+        let b_id = uuid::Uuid::new_v4();
+        
+        let a = VisualNode::new(a_id, "ReadStorage", crate::types::Position::new(0.0, 0.0));
+        let b = VisualNode::new(b_id, "Add", crate::types::Position::new(0.0, 0.0));
+        
+        graph.add_node(a);
+        graph.add_node(b);
+        
+        graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), a_id, "flow_out", b_id, "flow_in"));
+        graph.add_connection(crate::types::Connection::new(uuid::Uuid::new_v4(), b_id, "flow_out", a_id, "flow_in"));
+        
+        let loops = pass.find_loops(graph.get_nodes(), graph.get_connections()).unwrap();
+        assert!(!loops.is_empty());
+        assert_eq!(loops[0].len(), 2);
+        
+        // Loop contains ReadStorage (State), so it should be optimizable
+        let optimizable = pass.can_optimize_loop(&loops[0], &graph).unwrap();
+        assert!(optimizable);
     }
 }

@@ -61,6 +61,23 @@ pub enum NodeType {
     Resurgence,
 }
 
+impl From<&str> for NodeType {
+    fn from(s: &str) -> Self {
+        match s {
+            "Start" => NodeType::Start,
+            "End" => NodeType::End,
+            "If" | "And" | "Or" | "Not" => NodeType::Logic,
+            "ReadStorage" | "WriteStorage" => NodeType::State,
+            "Add" | "Subtract" | "Multiply" | "Divide" => NodeType::Arithmetic,
+            "VerifySignature" | "DecodeProof" => NodeType::Cryptographic,
+            "GetSender" | "GetContractId" | "GetBlockTimestamp" | "GetBlockHeight" | "EmitEvent" | "Revert" | "HashSha256" | "CallContract" | "ReadCallResult" | "TransferValue" => NodeType::External,
+            "FetchChronoBlock" | "FetchCheckpoint" | "VerifyChronoProof" | "ExtractChronoEvent" | "ExtractTxBySender" | "ExtractTxByRecipient" | "VerifyArchiveRange" => NodeType::Time,
+            "CheckTokenAge" | "CheckTokenActivityWindow" | "CheckLiquidityDormancy" | "CheckGovernanceDormancy" | "CalculateDormancyScore" | "NormalizeDeadCoinRisk" | "GenerateDormancyProof" | "EmitDormancyOracleResult" => NodeType::Resurgence,
+            _ => NodeType::Custom,
+        }
+    }
+}
+
 /// Graph structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Graph {
@@ -328,7 +345,7 @@ impl VisualGraph {
             .iter()
             .map(|v| Node {
                 id: v.id,
-                node_type: NodeType::Logic, // Default, modules should check string type
+                node_type: NodeType::from(v.node_type.as_str()),
                 position: v.position.clone(),
                 properties: v.properties.clone(),
             })

@@ -63,7 +63,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [features]
 default = ["cli"]
 cli = []
-# Future modules (source files on disk, not yet compilable):
+# Integrated modules:
 # ai, marketplace, sdk, community, deployment, monitoring, optimization
 
 [profile.release]

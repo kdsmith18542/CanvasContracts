@@ -1,7 +1,8 @@
 use crate::{
     error::CanvasResult,
-    types::{NodeId, NodeType, VisualGraph},
+    types::{NodeId, NodeType, VisualGraph, Connection, Position, VisualNode},
 };
+use uuid::Uuid;
 
 use super::{OptimizationResult, OptimizationSuggestion};
 
@@ -49,12 +50,18 @@ impl OptimizationEngine {
         let total_savings: u64 = suggestions.iter().map(|s| s.estimated_gas_savings).sum();
         let optimized_gas = original_gas.saturating_sub(total_savings);
 
+        let modified_graph = if !suggestions.is_empty() {
+            Some(self.apply_optimizations(graph, &suggestions))
+        } else {
+            None
+        };
+
         Ok(OptimizationResult {
             original_gas_estimate: original_gas,
             optimized_gas_estimate: optimized_gas,
             gas_savings: total_savings,
             suggestions,
-            modified_graph: None, // TODO: Implement graph modification
+            modified_graph,
         })
     }
 
@@ -323,5 +330,129 @@ impl OptimizationEngine {
                 implementation: "Combine multiple conditions into a single expression".to_string(),
             },
         ]
+    }
+
+    /// Apply optimizations to construct a modified graph
+    fn apply_optimizations(
+        &self,
+        graph: &VisualGraph,
+        suggestions: &[OptimizationSuggestion],
+    ) -> VisualGraph {
+        let mut modified_graph = graph.clone();
+
+        for suggestion in suggestions {
+            let matched_ids = &suggestion.nodes;
+            if matched_ids.is_empty() {
+                continue;
+            }
+
+            // Find corresponding rule to know the replacement types
+            let rule = self.optimization_rules.iter().find(|r| r.name == suggestion.title);
+            let replacement_types = match rule {
+                Some(r) => &r.replacement,
+                None => continue,
+            };
+
+            // Gather the matched nodes in the current state of modified_graph
+            let matched_nodes: Vec<VisualNode> = modified_graph.nodes.iter()
+                .filter(|n| matched_ids.contains(&n.id))
+                .cloned()
+                .collect();
+
+            if matched_nodes.is_empty() {
+                continue;
+            }
+
+            // Compute average position
+            let avg_x = matched_nodes.iter().map(|n| n.position.x).sum::<f64>() / matched_nodes.len() as f64;
+            let avg_y = matched_nodes.iter().map(|n| n.position.y).sum::<f64>() / matched_nodes.len() as f64;
+
+            // Create replacement nodes
+            let mut replacement_nodes = Vec::new();
+            for rep_type in replacement_types {
+                // Try to find a matched node with the same NodeType
+                let matched_of_type = matched_nodes.iter().find(|n| {
+                    let nt = NodeType::from(n.node_type.as_str());
+                    nt == *rep_type
+                });
+
+                let new_node = match matched_of_type {
+                    Some(m) => {
+                        let mut cloned = m.clone();
+                        cloned.id = Uuid::new_v4();
+                        cloned.position = Position::new(avg_x, avg_y);
+                        cloned
+                    }
+                    None => {
+                        let type_str = match rep_type {
+                            NodeType::Start => "Start",
+                            NodeType::End => "End",
+                            NodeType::Logic => "If",
+                            NodeType::State => "ReadStorage",
+                            NodeType::Arithmetic => "Add",
+                            NodeType::Cryptographic => "VerifySignature",
+                            NodeType::External => "EmitEvent",
+                            NodeType::Time => "FetchChronoBlock",
+                            NodeType::Resurgence => "CheckTokenAge",
+                            _ => "Custom",
+                        };
+                        VisualNode::new(Uuid::new_v4(), type_str, Position::new(avg_x, avg_y))
+                    }
+                };
+                replacement_nodes.push(new_node);
+            }
+
+            if replacement_nodes.is_empty() {
+                continue;
+            }
+
+            let first_rep_id = replacement_nodes[0].id;
+            let last_rep_id = replacement_nodes[replacement_nodes.len() - 1].id;
+
+            let mut new_connections = Vec::new();
+            for mut conn in std::mem::take(&mut modified_graph.connections) {
+                let source_matched = matched_ids.contains(&conn.source_node);
+                let target_matched = matched_ids.contains(&conn.target_node);
+
+                if source_matched && target_matched {
+                    // Internal connection, discard
+                    continue;
+                } else if source_matched {
+                    // Outgoing connection, redirect source to the last replacement node
+                    conn.source_node = last_rep_id;
+                    new_connections.push(conn);
+                } else if target_matched {
+                    // Incoming connection, redirect target to the first replacement node
+                    conn.target_node = first_rep_id;
+                    new_connections.push(conn);
+                } else {
+                    new_connections.push(conn);
+                }
+            }
+
+            // Add connections between replacement nodes
+            for i in 0..replacement_nodes.len() - 1 {
+                let conn = Connection::new(
+                    Uuid::new_v4(),
+                    replacement_nodes[i].id,
+                    "flow_out".to_string(),
+                    replacement_nodes[i+1].id,
+                    "flow_in".to_string()
+                );
+                new_connections.push(conn);
+            }
+
+            // Remove matched nodes from graph
+            modified_graph.nodes.retain(|n| !matched_ids.contains(&n.id));
+
+            // Add replacement nodes to graph
+            for node in replacement_nodes {
+                modified_graph.add_node(node);
+            }
+
+            modified_graph.connections = new_connections;
+        }
+
+        modified_graph
     }
 }

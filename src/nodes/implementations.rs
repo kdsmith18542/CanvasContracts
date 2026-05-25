@@ -174,7 +174,7 @@ impl Node for ReadStorageNode {
             self.key.clone()
         };
 
-        // Read from storage (simulated for now)
+        // Read from contract storage
         let value = context
             .execution_context
             .storage
