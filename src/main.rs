@@ -6,8 +6,9 @@ use log::{error, info};
 use canvas_contracts::{
     abi::{generate_wit_package, hash_wit_package, validate_wit_package},
     artifact::{
-        build_artifact_bundle, inspect_artifact_manifest, sign_artifact_manifest,
-        verify_artifact_manifest,
+        build_artifact_bundle,
+        hash::{canonical_graph_hash, hash_bytes_prefixed, GRAPH_CANONICALIZATION},
+        inspect_artifact_manifest, sign_artifact_manifest, verify_artifact_manifest,
     },
     chrononode::{submit_artifact_bundle, validate_content_hash_format},
     compiler::{Compiler, GraphExecutor},
@@ -595,9 +596,21 @@ fn compile_contract(
     // Validate before generating artifacts
     let validator = compiler.validator()?;
     let val_res = validator.validate(&graph)?;
-    let val_path = output.replace(".wasm", ".validation-report.json");
+    let output_path = std::path::Path::new(output);
+    let val_path = derive_compile_sidecar_path(output_path, "validation-report.json");
+    let graph_hash = canonical_graph_hash(&graph)?;
+    let target_adapter = graph
+        .metadata
+        .get("target_adapter")
+        .cloned()
+        .unwrap_or_else(|| "baals".to_string());
     let val_json = serde_json::json!({
         "schema_version": "canvas.validation.v1",
+        "graph_hash": graph_hash,
+        "graph_canonicalization": GRAPH_CANONICALIZATION,
+        "target_adapter": target_adapter,
+        "node_count": graph.nodes.len(),
+        "connection_count": graph.connections.len(),
         "is_valid": val_res.is_valid,
         "errors": val_res.errors.clone(),
         "warnings": val_res.warnings.clone()
@@ -608,7 +621,7 @@ fn compile_contract(
         return Err(CanvasError::Validation(format!(
             "Graph validation failed with {} error(s). See {} for details.",
             val_res.errors.len(),
-            val_path
+            val_path.display()
         )));
     }
 
@@ -616,45 +629,49 @@ fn compile_contract(
     let result = compiler.compile(&graph)?;
 
     // Write WASM output
-    std::fs::write(output, &result.wasm_bytes).map_err(CanvasError::Io)?;
+    std::fs::write(output_path, &result.wasm_bytes).map_err(CanvasError::Io)?;
 
     // Write ABI
-    let abi_path = output.replace(".wasm", ".abi.json");
+    let abi_path = derive_compile_sidecar_path(output_path, "abi.json");
     let abi_content =
         serde_json::to_string_pretty(&result.abi).map_err(CanvasError::Serialization)?;
     std::fs::write(&abi_path, abi_content).map_err(CanvasError::Io)?;
 
     // Calculate hashes for lockfile
-    use sha2::{Digest, Sha256};
-    let graph_hash = hex::encode(Sha256::digest(graph_content.as_bytes()));
-    let wasm_hash = hex::encode(Sha256::digest(&result.wasm_bytes));
+    let wasm_hash = hash_bytes_prefixed(&result.wasm_bytes);
+    let mut node_types: Vec<String> = graph.nodes.iter().map(|n| n.node_type.clone()).collect();
+    node_types.sort();
+    node_types.dedup();
 
     // Write graph.lock.json
-    let lock_path = output.replace(".wasm", ".lock.json");
-    let target_adapter = graph
-        .metadata
-        .get("target_adapter")
-        .cloned()
-        .unwrap_or_else(|| "baals".to_string());
+    let lock_path = derive_compile_sidecar_path(output_path, "graph.lock.json");
     let lock_json = serde_json::json!({
-        "schema_version": "canvas.graph.v1",
+        "schema_version": "canvas.graph.lock.v1",
         "project_name": graph.name,
         "target_adapter": target_adapter,
+        "graph_canonicalization": GRAPH_CANONICALIZATION,
+        "node_count": graph.nodes.len(),
+        "connection_count": graph.connections.len(),
+        "node_types": node_types,
+        "gas_estimate": result.gas_estimate,
         "compiler": {
+            "name": env!("CARGO_PKG_NAME"),
             "version": env!("CARGO_PKG_VERSION"),
-            "wasm_target": "wasm32-unknown-unknown"
+            "wasm_target": "wasm32-unknown-unknown",
+            "wasm_encoder_version": "0.38",
+            "wasmtime_validation_version": "43.0.1"
         },
-        "graph_hash": format!("sha256:{}", graph_hash),
-        "wasm_hash": format!("sha256:{}", wasm_hash)
+        "graph_hash": graph_hash,
+        "wasm_hash": wasm_hash
     });
     std::fs::write(&lock_path, serde_json::to_string_pretty(&lock_json)?)
         .map_err(CanvasError::Io)?;
 
     info!("Compilation successful!");
-    info!("WASM file: {}", output);
-    info!("ABI file: {}", abi_path);
-    info!("Lock file: {}", lock_path);
-    info!("Validation report file: {}", val_path);
+    info!("WASM file: {}", output_path.display());
+    info!("ABI file: {}", abi_path.display());
+    info!("Lock file: {}", lock_path.display());
+    info!("Validation report file: {}", val_path.display());
     info!("Gas estimate: {}", result.gas_estimate);
 
     if !result.warnings.is_empty() {
@@ -665,6 +682,21 @@ fn compile_contract(
     }
 
     Ok(())
+}
+
+fn derive_compile_sidecar_path(
+    output_wasm: &std::path::Path,
+    sidecar_suffix: &str,
+) -> std::path::PathBuf {
+    let parent = output_wasm
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let stem = output_wasm
+        .file_stem()
+        .and_then(std::ffi::OsStr::to_str)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("contract");
+    parent.join(format!("{}.{}", stem, sidecar_suffix))
 }
 
 fn simulate_graph(
@@ -775,9 +807,8 @@ fn deploy_contract(
     // Load WASM bytes
     let wasm_bytes = std::fs::read(contract).map_err(CanvasError::Io)?;
 
-    // Load private key
-    let key_content = std::fs::read_to_string(key).map_err(CanvasError::Io)?;
-    let private_key = key_content.trim();
+    // Load private key with basic filesystem permission hardening.
+    let private_key = read_private_key_file(key)?;
 
     // Parse constructor arguments
     let constructor_args = if let Some(args_str) = args {
@@ -791,7 +822,7 @@ fn deploy_contract(
 
     // Deploy contract
     let deployment_result =
-        baals_client.deploy_contract(&wasm_bytes, constructor_args, private_key)?;
+        baals_client.deploy_contract(&wasm_bytes, constructor_args, &private_key)?;
 
     info!("Deployment successful!");
     info!("Contract address: {}", deployment_result.contract_address);
@@ -799,6 +830,31 @@ fn deploy_contract(
     info!("Gas used: {}", deployment_result.gas_used);
 
     Ok(())
+}
+
+fn read_private_key_file(path: &str) -> CanvasResult<String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = std::fs::metadata(path).map_err(CanvasError::Io)?;
+        let mode = metadata.permissions().mode() & 0o777;
+        if (mode & 0o077) != 0 {
+            return Err(CanvasError::PermissionDenied(format!(
+                "Insecure key file permissions for '{}': {:o}. Expected 600.",
+                path, mode
+            )));
+        }
+    }
+
+    let key_content = std::fs::read_to_string(path).map_err(CanvasError::Io)?;
+    let private_key = key_content.trim().to_string();
+    if private_key.is_empty() {
+        return Err(CanvasError::Validation(format!(
+            "Private key file '{}' is empty",
+            path
+        )));
+    }
+    Ok(private_key)
 }
 
 fn start_editor(port: u16, host: &str, config_manager: &ConfigManager) -> CanvasResult<()> {
@@ -871,4 +927,60 @@ fn validate_graph(input: &str, config_manager: &ConfigManager) -> CanvasResult<(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_private_key_file;
+    use std::fs;
+
+    #[test]
+    fn read_private_key_file_rejects_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join("key.txt");
+        fs::write(&key_path, " \n ").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&key_path).unwrap().permissions();
+            perms.set_mode(0o600);
+            fs::set_permissions(&key_path, perms).unwrap();
+        }
+        let err = read_private_key_file(key_path.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("is empty"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_private_key_file_requires_0600_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join("key.txt");
+        fs::write(&key_path, "deadbeef").unwrap();
+
+        let mut perms = fs::metadata(&key_path).unwrap().permissions();
+        perms.set_mode(0o644);
+        fs::set_permissions(&key_path, perms).unwrap();
+
+        let err = read_private_key_file(key_path.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("Expected 600"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_private_key_file_accepts_0600_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let key_path = dir.path().join("key.txt");
+        fs::write(&key_path, "deadbeef").unwrap();
+
+        let mut perms = fs::metadata(&key_path).unwrap().permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(&key_path, perms).unwrap();
+
+        let key = read_private_key_file(key_path.to_str().unwrap()).unwrap();
+        assert_eq!(key, "deadbeef");
+    }
 }
