@@ -4,9 +4,11 @@
 //! visual smart contracts using WebAssembly.
 
 // ── Core modules ─────────────────────────────────────────────────────
+pub mod abi;
 pub mod adapter;
 pub mod artifact;
 pub mod baals;
+pub mod chrononode;
 pub mod compiler;
 pub mod config;
 pub mod debugger;
@@ -23,6 +25,7 @@ pub mod marketplace;
 pub mod monitoring;
 pub mod optimization;
 pub mod sdk;
+pub mod validation;
 
 // NOTE: Removed the separate src/validator.rs — consolidated on compiler::Validator.
 
@@ -36,10 +39,15 @@ pub use adapter::{
 };
 pub use artifact::{build_artifact_bundle, verify_artifact_manifest};
 pub use baals::{create_client, sign_payload, BaalsClient, MockBaalsClient};
+pub use chrononode::{submit_artifact_bundle, validate_content_hash_format, ArchiveSubmitResult};
 /// Re-export commonly used types
 pub use compiler::Compiler;
 pub use debugger::{DebugConfig, DebugSession, DebuggerUtils};
 pub use nodes::{Node, NodeContext, NodeDefinition, NodeRegistry};
+pub use validation::{
+    baals_wasm_v1_profile, inspect_wasm, print_wat, validate_wasm_against_profile, RuntimeProfile,
+    WasmInspection, WasmValidationReport,
+};
 pub use wasm::{WasmModule, WasmRuntime};
 
 /// Version information

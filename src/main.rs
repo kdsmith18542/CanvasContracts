@@ -4,13 +4,16 @@ use clap::{Parser, Subcommand};
 use log::{error, info};
 
 use canvas_contracts::{
+    abi::{generate_wit_package, hash_wit_package, validate_wit_package},
     artifact::{build_artifact_bundle, verify_artifact_manifest},
+    chrononode::{submit_artifact_bundle, validate_content_hash_format},
     compiler::{Compiler, GraphExecutor},
     config::ConfigManager,
     error::{CanvasError, CanvasResult},
     info as lib_info, init,
     nodes::{builtin_node_definitions, NodeRegistry},
     types::{ExecutionContext, VisualGraph},
+    validation::{baals_wasm_v1_profile, inspect_wasm, print_wat, validate_wasm_against_profile},
 };
 
 #[derive(Parser)]
@@ -111,6 +114,24 @@ enum Commands {
         #[command(subcommand)]
         action: ArtifactCommands,
     },
+
+    /// Validate and inspect WASM modules
+    Wasm {
+        #[command(subcommand)]
+        action: WasmCommands,
+    },
+
+    /// Generate and validate WIT ABI packages
+    Wit {
+        #[command(subcommand)]
+        action: WitCommands,
+    },
+
+    /// Submit and verify archived bundles with ChronoNode
+    Archive {
+        #[command(subcommand)]
+        action: ArchiveCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -130,6 +151,72 @@ enum ArtifactCommands {
         /// Path to canvas.contract.json
         #[arg(short, long)]
         manifest: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum WasmCommands {
+    /// Validate a WASM module against a runtime profile
+    Validate {
+        /// WASM file to validate
+        #[arg(short, long)]
+        wasm: String,
+        /// Runtime profile name
+        #[arg(short, long, default_value = "baals-wasm-v1")]
+        profile: String,
+        /// Optional JSON output report path
+        #[arg(short, long)]
+        out: Option<String>,
+    },
+    /// Inspect a WASM module
+    Inspect {
+        /// WASM file to inspect
+        #[arg(short, long)]
+        wasm: String,
+        /// Emit machine-readable JSON report
+        #[arg(long, default_value_t = false)]
+        json: bool,
+        /// Optional file path to write WAT disassembly
+        #[arg(long)]
+        wat_out: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum WitCommands {
+    /// Generate WIT package files in an output directory
+    Generate {
+        /// Optional source graph file (reserved for future graph-driven WIT generation)
+        #[arg(short, long)]
+        input: Option<String>,
+        /// Output directory for WIT files
+        #[arg(short, long)]
+        out: String,
+    },
+    /// Validate a WIT package directory
+    Validate {
+        /// WIT directory to validate
+        #[arg(short, long)]
+        wit: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ArchiveCommands {
+    /// Submit an artifact bundle file to ChronoNode
+    Submit {
+        /// Bundle file path (e.g. .canvasbundle.tar.zst)
+        #[arg(short, long)]
+        bundle: String,
+        /// ChronoNode base URL
+        #[arg(short = 'u', long)]
+        chrononode_url: String,
+    },
+    /// Verify archive content-hash format
+    Verify {
+        /// Content hash in sha256:<hex> format
+        #[arg(short, long)]
+        content_hash: String,
     },
 }
 
@@ -194,6 +281,40 @@ fn main() -> CanvasResult<()> {
             }
         },
 
+        Some(Commands::Wasm { action }) => match action {
+            WasmCommands::Validate { wasm, profile, out } => {
+                wasm_validate(wasm, profile, out.as_deref())?;
+            }
+            WasmCommands::Inspect {
+                wasm,
+                json,
+                wat_out,
+            } => {
+                wasm_inspect(wasm, *json, wat_out.as_deref())?;
+            }
+        },
+
+        Some(Commands::Wit { action }) => match action {
+            WitCommands::Generate { input, out } => {
+                wit_generate(input.as_deref(), out)?;
+            }
+            WitCommands::Validate { wit } => {
+                wit_validate(wit)?;
+            }
+        },
+
+        Some(Commands::Archive { action }) => match action {
+            ArchiveCommands::Submit {
+                bundle,
+                chrononode_url,
+            } => {
+                archive_submit(bundle, chrononode_url)?;
+            }
+            ArchiveCommands::Verify { content_hash } => {
+                archive_verify(content_hash)?;
+            }
+        },
+
         None => {
             // Default: start the visual editor
             start_editor(3000, "localhost", &config_manager)?
@@ -243,6 +364,129 @@ fn verify_artifact(manifest: &str, _config_manager: &ConfigManager) -> CanvasRes
     info!("WIT hash: {}", result.wit_hash);
     info!("ABI hash: {}", result.json_abi_hash);
     info!("Safety report hash: {}", result.safety_report_hash);
+    Ok(())
+}
+
+fn wasm_validate(wasm: &str, profile: &str, out: Option<&str>) -> CanvasResult<()> {
+    let wasm_bytes = std::fs::read(wasm).map_err(CanvasError::Io)?;
+    let runtime_profile = match profile {
+        "baals-wasm-v1" => baals_wasm_v1_profile(),
+        other => {
+            return Err(CanvasError::Config(format!(
+                "Unsupported runtime profile '{}'",
+                other
+            )))
+        }
+    };
+
+    let report = validate_wasm_against_profile(&wasm_bytes, &runtime_profile)?;
+    if let Some(out_path) = out {
+        let content = serde_json::to_string_pretty(&report)?;
+        std::fs::write(out_path, content).map_err(CanvasError::Io)?;
+        info!("WASM validation report written to {}", out_path);
+    }
+
+    info!("WASM validation status: {}", report.status);
+    info!("Profile: {}", report.target_profile);
+    info!("WASM size: {} bytes", report.inspection.size_bytes);
+    info!("Imports: {}", report.inspection.imports.len());
+    info!("Exports: {}", report.inspection.exports.len());
+
+    if !report.warnings.is_empty() {
+        for warning in &report.warnings {
+            info!("warning: {}", warning);
+        }
+    }
+    if !report.errors.is_empty() {
+        for err in &report.errors {
+            error!("error: {}", err);
+        }
+        return Err(CanvasError::Validation(
+            "WASM validation failed".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn wasm_inspect(wasm: &str, as_json: bool, wat_out: Option<&str>) -> CanvasResult<()> {
+    let wasm_bytes = std::fs::read(wasm).map_err(CanvasError::Io)?;
+    let inspection = inspect_wasm(&wasm_bytes)?;
+
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&inspection)?);
+    } else {
+        info!("WASM inspect:");
+        info!("  size_bytes={}", inspection.size_bytes);
+        info!("  imports={}", inspection.imports.len());
+        info!("  exports={}", inspection.exports.len());
+        info!("  memory_pages={}", inspection.memory_pages);
+        info!("  has_wasi={}", inspection.has_wasi);
+        info!("  has_threads={}", inspection.has_threads);
+        info!("  has_multi_memory={}", inspection.has_multi_memory);
+        info!("  has_memory64={}", inspection.has_memory64);
+        info!("  float_operator_count={}", inspection.float_operator_count);
+    }
+
+    if let Some(wat_path) = wat_out {
+        let wat = print_wat(&wasm_bytes)?;
+        std::fs::write(wat_path, wat).map_err(CanvasError::Io)?;
+        info!("WAT disassembly written to {}", wat_path);
+    }
+    Ok(())
+}
+
+fn wit_generate(input: Option<&str>, out: &str) -> CanvasResult<()> {
+    if let Some(path) = input {
+        info!(
+            "WIT generation currently uses the canonical package template; graph input '{}' is reserved for graph-driven generation",
+            path
+        );
+    }
+    let out_dir = std::path::Path::new(out);
+    let files = generate_wit_package(out_dir)?;
+    let hash = hash_wit_package(out_dir)?;
+    info!(
+        "Generated {} WIT files in {}",
+        files.len(),
+        out_dir.display()
+    );
+    info!("WIT hash: {}", hash);
+    Ok(())
+}
+
+fn wit_validate(wit: &str) -> CanvasResult<()> {
+    let dir = std::path::Path::new(wit);
+    let report = validate_wit_package(dir)?;
+    info!("WIT package: {}", report.package);
+    if !report.warnings.is_empty() {
+        for warning in &report.warnings {
+            info!("warning: {}", warning);
+        }
+    }
+    if !report.errors.is_empty() {
+        for err in &report.errors {
+            error!("error: {}", err);
+        }
+        return Err(CanvasError::Validation("WIT validation failed".to_string()));
+    }
+    info!("WIT validation passed");
+    Ok(())
+}
+
+fn archive_submit(bundle: &str, chrononode_url: &str) -> CanvasResult<()> {
+    let result = submit_artifact_bundle(std::path::Path::new(bundle), chrononode_url)?;
+    info!("Archive submit successful");
+    info!("Storage pointer: {}", result.storage_pointer);
+    info!("Content hash: {}", result.content_hash);
+    if let Some(checkpoint) = result.checkpoint_id {
+        info!("Checkpoint id: {}", checkpoint);
+    }
+    Ok(())
+}
+
+fn archive_verify(content_hash: &str) -> CanvasResult<()> {
+    validate_content_hash_format(content_hash)?;
+    info!("Archive content hash format is valid: {}", content_hash);
     Ok(())
 }
 

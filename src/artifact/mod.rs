@@ -8,10 +8,12 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
 use crate::{
+    abi::validate_wit_package,
     compiler::Compiler,
     config::Config,
     error::{CanvasError, CanvasResult},
     types::VisualGraph,
+    validation::{baals_wasm_v1_profile, validate_wasm_against_profile},
     wasm::WasmRuntime,
 };
 
@@ -28,7 +30,6 @@ use self::{
 };
 
 const DEFAULT_WIT_PACKAGE: &str = "baals:contract@1.0.0";
-const MAX_WASM_SIZE_BYTES: usize = 1_048_576;
 const MAX_MEMORY_PAGES: u32 = 16;
 const DEFAULT_FUEL: u64 = 1_000_000;
 const DEFAULT_NODE_PACK_LOCK_SCHEMA: &str = "canvas.nodepack.lock.v1";
@@ -56,39 +57,6 @@ const DEFAULT_WIT_FILES: &[(&str, &str)] = &[
         "contract.wit",
         "world baals-contract {\n  import storage;\n  import crypto;\n  import proof;\n\n  export init: func(args: list<u8>) -> result<_, string>;\n  export call: func(method: string, args: list<list<u8>>) -> result<list<u8>, string>;\n  export query: func(method: string, args: list<list<u8>>) -> result<list<u8>, string>;\n}\n",
     ),
-];
-
-const BAALS_ALLOWED_IMPORTS: &[&str] = &[
-    "baals.baals_read_storage",
-    "baals.baals_write_storage",
-    "baals.baals_get_sender",
-    "baals.baals_get_contract_id",
-    "baals.baals_get_block_timestamp",
-    "baals.baals_get_block_height",
-    "baals.baals_emit_event",
-    "baals.baals_revert",
-    "baals.baals_revert_with_reason",
-    "baals.baals_hash_sha256",
-    "baals.baals_call_contract",
-    "baals.baals_read_call_result",
-    "baals.baals_transfer_value",
-    "crypto.crypto_verify_signature",
-    "crypto.crypto_decode_proof",
-    "chrononode.chrononode_fetch_block",
-    "chrononode.chrononode_fetch_checkpoint",
-    "chrononode.chrononode_verify_proof",
-    "chrononode.chrononode_extract_event",
-    "chrononode.chrononode_extract_tx_by_sender",
-    "chrononode.chrononode_extract_tx_by_recipient",
-    "chrononode.chrononode_verify_archive_range",
-    "resurgence.resurgence_check_token_age",
-    "resurgence.resurgence_check_token_activity_window",
-    "resurgence.resurgence_check_liquidity_dormancy",
-    "resurgence.resurgence_check_governance_dormancy",
-    "resurgence.resurgence_calculate_dormancy_score",
-    "resurgence.resurgence_normalize_dead_coin_risk",
-    "resurgence.resurgence_generate_dormancy_proof",
-    "resurgence.resurgence_emit_dormancy_oracle_result",
 ];
 
 #[derive(Debug, Clone)]
@@ -173,46 +141,30 @@ pub fn build_artifact_bundle(
     let compilation = compiler.compile(graph)?;
     let runtime = WasmRuntime::new(config)?;
     runtime.validate_module(&compilation.wasm_bytes)?;
+    let wasm_validation =
+        validate_wasm_against_profile(&compilation.wasm_bytes, &baals_wasm_v1_profile())?;
 
-    let exports = runtime.get_exports(&compilation.wasm_bytes)?;
-    let imports = runtime.get_imports(&compilation.wasm_bytes)?;
-
-    let mut errors = Vec::new();
     let mut warnings = validation_result.warnings.clone();
+    warnings.extend(wasm_validation.warnings.clone());
+    let errors = wasm_validation.errors.clone();
+    let imports = wasm_validation.inspection.imports.clone();
+    let exports = wasm_validation.inspection.exports.clone();
 
-    if !exports.iter().any(|e| e == "main") {
-        errors.push("Missing required export: main".to_string());
+    let mut forbidden_features = Vec::new();
+    if wasm_validation.inspection.has_wasi {
+        forbidden_features.push("wasi".to_string());
     }
-    if !exports.iter().any(|e| e == "call") {
-        warnings
-            .push("Export 'call' not found; lifecycle ABI remains legacy-main only".to_string());
+    if wasm_validation.inspection.has_threads {
+        forbidden_features.push("threads".to_string());
     }
-    if !exports.iter().any(|e| e == "query") {
-        warnings.push("Export 'query' not found; read-only ABI route unavailable".to_string());
+    if wasm_validation.inspection.has_multi_memory {
+        forbidden_features.push("multi-memory".to_string());
     }
-
-    let mut forbidden_imports = Vec::new();
-    for import in &imports {
-        if !BAALS_ALLOWED_IMPORTS
-            .iter()
-            .any(|allowed| allowed == import)
-        {
-            forbidden_imports.push(import.clone());
-        }
+    if wasm_validation.inspection.has_memory64 {
+        forbidden_features.push("memory64".to_string());
     }
-    if !forbidden_imports.is_empty() {
-        errors.push(format!(
-            "Found {} non-whitelisted import(s)",
-            forbidden_imports.len()
-        ));
-    }
-
-    if compilation.wasm_bytes.len() > MAX_WASM_SIZE_BYTES {
-        errors.push(format!(
-            "WASM size {} exceeds max {}",
-            compilation.wasm_bytes.len(),
-            MAX_WASM_SIZE_BYTES
-        ));
+    if wasm_validation.inspection.float_operator_count > 0 {
+        forbidden_features.push("floating-point".to_string());
     }
 
     let graph_json = serde_json::to_string_pretty(graph).map_err(CanvasError::Serialization)?;
@@ -239,8 +191,8 @@ pub fn build_artifact_bundle(
             size_bytes: compilation.wasm_bytes.len(),
             imports: imports.clone(),
             exports: exports.clone(),
-            memory_pages: 1,
-            forbidden_features: forbidden_imports,
+            memory_pages: wasm_validation.inspection.memory_pages,
+            forbidden_features,
         },
         graph: GraphReport {
             nodes: graph.nodes.len(),
@@ -443,6 +395,22 @@ pub fn verify_artifact_manifest(manifest_path: &Path) -> CanvasResult<ArtifactVe
         )));
     }
 
+    let wit_validation = validate_wit_package(&wit_dir)?;
+    if !wit_validation.valid {
+        return Err(CanvasError::Validation(format!(
+            "WIT package validation failed: {}",
+            wit_validation.errors.join("; ")
+        )));
+    }
+
+    let wasm_validation = validate_wasm_against_profile(&wasm_bytes, &baals_wasm_v1_profile())?;
+    if wasm_validation.status != "pass" {
+        return Err(CanvasError::Validation(format!(
+            "WASM runtime profile validation failed: {}",
+            wasm_validation.errors.join("; ")
+        )));
+    }
+
     Ok(ArtifactVerifyOutput {
         manifest_path: manifest_path.to_path_buf(),
         status: manifest.validation.status,
@@ -561,12 +529,42 @@ fn count_graph_nodes(graph: &VisualGraph, node_type: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_encoder::{
+        CodeSection, ExportKind, ExportSection, Function, FunctionSection, Instruction, Module,
+        TypeSection, ValType,
+    };
 
     fn load_fixture(name: &str) -> VisualGraph {
         let path = format!("tests/fixtures/{}.json", name);
         let data =
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read fixture failed: {}", e));
         serde_json::from_str(&data).unwrap_or_else(|e| panic!("parse fixture failed: {}", e))
+    }
+
+    fn float_wasm_module() -> Vec<u8> {
+        let mut module = Module::new();
+        let mut types = TypeSection::new();
+        types.function([], [ValType::I64]);
+        module.section(&types);
+
+        let mut funcs = FunctionSection::new();
+        funcs.function(0);
+        module.section(&funcs);
+
+        let mut exports = ExportSection::new();
+        exports.export("main", ExportKind::Func, 0);
+        module.section(&exports);
+
+        let mut codes = CodeSection::new();
+        let mut func = Function::new(vec![]);
+        func.instruction(&Instruction::F32Const(1.0f32.into()));
+        func.instruction(&Instruction::Drop);
+        func.instruction(&Instruction::I64Const(7));
+        func.instruction(&Instruction::End);
+        codes.function(&func);
+        module.section(&codes);
+
+        module.finish()
     }
 
     #[test]
@@ -612,5 +610,42 @@ mod tests {
 
         let err = verify_artifact_manifest(&out.manifest_path).unwrap_err();
         assert!(err.to_string().contains("WIT hash mismatch"));
+    }
+
+    #[test]
+    fn verify_fails_when_wit_is_invalid_even_with_matching_hash() {
+        let graph = load_fixture("simple_arithmetic");
+        let config = Config::default();
+        let tmp = tempfile::tempdir().unwrap();
+
+        let out = build_artifact_bundle(&graph, &config, tmp.path()).unwrap();
+        std::fs::write(out.wit_dir.join("contract.wit"), "world broken {}\n").unwrap();
+
+        let mut manifest = ContractManifest::read_from_path(&out.manifest_path).unwrap();
+        manifest.abi.wit_hash = hash_wit_directory(&out.wit_dir).unwrap();
+        manifest.write_to_path(&out.manifest_path).unwrap();
+
+        let err = verify_artifact_manifest(&out.manifest_path).unwrap_err();
+        assert!(err.to_string().contains("WIT package validation failed"));
+    }
+
+    #[test]
+    fn verify_fails_when_wasm_profile_is_invalid_even_with_matching_hash() {
+        let graph = load_fixture("simple_arithmetic");
+        let config = Config::default();
+        let tmp = tempfile::tempdir().unwrap();
+
+        let out = build_artifact_bundle(&graph, &config, tmp.path()).unwrap();
+        let wasm_bytes = float_wasm_module();
+        std::fs::write(&out.wasm_path, &wasm_bytes).unwrap();
+
+        let mut manifest = ContractManifest::read_from_path(&out.manifest_path).unwrap();
+        manifest.artifact.wasm_hash = hash_bytes_prefixed(&wasm_bytes);
+        manifest.write_to_path(&out.manifest_path).unwrap();
+
+        let err = verify_artifact_manifest(&out.manifest_path).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("WASM runtime profile validation failed"));
     }
 }

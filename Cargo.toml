@@ -23,7 +23,7 @@ petgraph = "0.6"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 
 # Cryptography (used by BaaLS mock deployment)
-rand = "0.8"
+rand = "0.8.6"
 
 # Configuration
 toml = "0.8"
@@ -33,10 +33,12 @@ dirs = "5.0"
 clap = { version = "4.0", features = ["derive"] }
 
 # WASM runtime
-wasmtime = "15.0"
+wasmtime = "43.0.1"
 
 # WASM code generation
 wasm-encoder = "0.38"
+wasmparser = "0.220"
+wasmprinter = "0.220"
 
 # Cryptographic signing
 sha2 = "0.10"
@@ -45,7 +47,7 @@ hex = "0.4"
 zeroize = { version = "1.8", features = ["derive"] }
 
 # HTTP client for BaaLS RPC
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 
 # Time handling (for marketplace, community modules)
 chrono = { version = "0.4", features = ["serde"] }
