@@ -1,19 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use canvas_contracts::{
-    Compiler, WasmRuntime, create_client, BaalsClient,
+    create_client, BaalsClient, Compiler, WasmRuntime,
+    adapter::ChronoNodeClient,
     artifact::hash::{canonical_graph_hash, hash_bytes_prefixed, GRAPH_CANONICALIZATION},
     artifact::build_artifact_bundle,
-    nodes::builtin_node_definitions,
-    types::VisualGraph,
-    error::{CanvasError, CanvasResult},
     debugger::DebugSession,
+    error::CanvasError,
     nodes::NodeRegistry,
-    adapter::ChronoNodeClient,
+    nodes::builtin_node_definitions,
+    types::{ExecutionStep, VisualGraph},
 };
 use serde::{Deserialize, Serialize};
-use std::sync::{Mutex, PoisonError};
-use tauri::State;
+use std::sync::Mutex;
+use tauri::{Manager, State};
 
 struct AppState {
     compiler: Mutex<Option<Compiler>>,
@@ -86,8 +86,8 @@ async fn validate_graph(
     let compiler = lock_compiler(&state)?;
     let compiler = compiler.as_ref().ok_or("Compiler not initialized")?;
 
-    let validator = compiler.validator()?;
-    let result = validator.validate(&graph)?;
+    let validator = compiler.validator().map_err(|e| e.to_string())?;
+    let result = validator.validate(&graph).map_err(|e| e.to_string())?;
 
     Ok(serde_json::to_value(result).map_err(|e| e.to_string())?)
 }
