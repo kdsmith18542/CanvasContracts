@@ -5,7 +5,10 @@ use log::{error, info};
 
 use canvas_contracts::{
     abi::{generate_wit_package, hash_wit_package, validate_wit_package},
-    artifact::{build_artifact_bundle, verify_artifact_manifest},
+    artifact::{
+        build_artifact_bundle, inspect_artifact_manifest, sign_artifact_manifest,
+        verify_artifact_manifest,
+    },
     chrononode::{submit_artifact_bundle, validate_content_hash_format},
     compiler::{Compiler, GraphExecutor},
     config::ConfigManager,
@@ -152,6 +155,27 @@ enum ArtifactCommands {
         #[arg(short, long)]
         manifest: String,
     },
+    /// Sign artifact manifest with an Ed25519 key
+    Sign {
+        /// Path to canvas.contract.json
+        #[arg(short, long)]
+        manifest: String,
+        /// Environment variable name containing a hex signing key
+        #[arg(long)]
+        key_env: Option<String>,
+        /// File containing a hex signing key
+        #[arg(long)]
+        key_file: Option<String>,
+    },
+    /// Print artifact manifest details
+    Inspect {
+        /// Path to canvas.contract.json
+        #[arg(short, long)]
+        manifest: String,
+        /// Emit machine-readable JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -279,6 +303,16 @@ fn main() -> CanvasResult<()> {
             ArtifactCommands::Verify { manifest } => {
                 verify_artifact(manifest, &config_manager)?;
             }
+            ArtifactCommands::Sign {
+                manifest,
+                key_env,
+                key_file,
+            } => {
+                sign_artifact(manifest, key_env.as_deref(), key_file.as_deref())?;
+            }
+            ArtifactCommands::Inspect { manifest, json } => {
+                inspect_artifact(manifest, *json)?;
+            }
         },
 
         Some(Commands::Wasm { action }) => match action {
@@ -365,6 +399,57 @@ fn verify_artifact(manifest: &str, _config_manager: &ConfigManager) -> CanvasRes
     info!("ABI hash: {}", result.json_abi_hash);
     info!("Safety report hash: {}", result.safety_report_hash);
     Ok(())
+}
+
+fn sign_artifact(
+    manifest: &str,
+    key_env: Option<&str>,
+    key_file: Option<&str>,
+) -> CanvasResult<()> {
+    let key_hex = resolve_signing_key_hex(key_env, key_file)?;
+    let sig = sign_artifact_manifest(std::path::Path::new(manifest), &key_hex)?;
+    info!("Artifact manifest signed successfully");
+    info!("Algorithm: {}", sig.algorithm);
+    info!("Public key: {}", sig.public_key);
+    Ok(())
+}
+
+fn inspect_artifact(manifest: &str, as_json: bool) -> CanvasResult<()> {
+    let manifest = inspect_artifact_manifest(std::path::Path::new(manifest))?;
+    if as_json {
+        println!("{}", serde_json::to_string_pretty(&manifest)?);
+        return Ok(());
+    }
+
+    info!("Manifest: {}", manifest.name);
+    info!("Version: {}", manifest.version);
+    info!("Target: {}", manifest.target);
+    info!("Schema: {}", manifest.schema);
+    info!("WASM hash: {}", manifest.artifact.wasm_hash);
+    info!("Graph hash: {}", manifest.source.graph_hash);
+    info!("WIT package: {}", manifest.abi.wit_package);
+    info!("WIT hash: {}", manifest.abi.wit_hash);
+    info!("Validation status: {}", manifest.validation.status);
+    info!("Signatures: {}", manifest.signatures.len());
+    Ok(())
+}
+
+fn resolve_signing_key_hex(key_env: Option<&str>, key_file: Option<&str>) -> CanvasResult<String> {
+    if let Some(env_name) = key_env {
+        let value = std::env::var(env_name).map_err(|_| {
+            CanvasError::Config(format!("Signing key env var '{}' is not set", env_name))
+        })?;
+        return Ok(value.trim().to_string());
+    }
+
+    if let Some(path) = key_file {
+        let value = std::fs::read_to_string(path).map_err(CanvasError::Io)?;
+        return Ok(value.trim().to_string());
+    }
+
+    Err(CanvasError::Config(
+        "Provide --key-env or --key-file to sign manifest".to_string(),
+    ))
 }
 
 fn wasm_validate(wasm: &str, profile: &str, out: Option<&str>) -> CanvasResult<()> {

@@ -37,7 +37,10 @@ pub use adapter::{
     create_chrononode_client, BaaLSAdapter, ChronoNodeClient, HttpChronoNodeClient, LedgerAdapter,
     MockChronoNodeClient, RuntimeInfo,
 };
-pub use artifact::{build_artifact_bundle, verify_artifact_manifest};
+pub use artifact::{
+    build_artifact_bundle, inspect_artifact_manifest, sign_artifact_manifest,
+    verify_artifact_manifest,
+};
 pub use baals::{create_client, sign_payload, BaalsClient, MockBaalsClient};
 pub use chrononode::{submit_artifact_bundle, validate_content_hash_format, ArchiveSubmitResult};
 /// Re-export commonly used types

@@ -4,8 +4,10 @@ pub mod manifest;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
+use ed25519_dalek::{Signer, Verifier};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
+use zeroize::Zeroize;
 
 use crate::{
     abi::validate_wit_package,
@@ -24,8 +26,8 @@ use self::{
     },
     manifest::{
         default_compiler_section, AbiSection, ArchiveSection, ArtifactSection, ContractManifest,
-        DeploymentSection, RuntimeSection, SourceSection, ValidationSection, MANIFEST_SCHEMA,
-        TARGET_PROFILE_BAALS_WASM_V1,
+        DeploymentSection, RuntimeSection, SignatureEntry, SourceSection, ValidationSection,
+        MANIFEST_SCHEMA, TARGET_PROFILE_BAALS_WASM_V1,
     },
 };
 
@@ -411,6 +413,8 @@ pub fn verify_artifact_manifest(manifest_path: &Path) -> CanvasResult<ArtifactVe
         )));
     }
 
+    verify_manifest_signatures(&manifest)?;
+
     Ok(ArtifactVerifyOutput {
         manifest_path: manifest_path.to_path_buf(),
         status: manifest.validation.status,
@@ -421,6 +425,75 @@ pub fn verify_artifact_manifest(manifest_path: &Path) -> CanvasResult<ArtifactVe
         json_abi_hash,
         safety_report_hash,
     })
+}
+
+pub fn sign_artifact_manifest(
+    manifest_path: &Path,
+    private_key_hex: &str,
+) -> CanvasResult<SignatureEntry> {
+    let mut manifest = ContractManifest::read_from_path(manifest_path)?;
+    let payload = manifest_signing_payload(&manifest)?;
+
+    let signing_key = decode_signing_key(private_key_hex)?;
+    let verifying_key = signing_key.verifying_key();
+    let signature = signing_key.sign(&payload);
+
+    let entry = SignatureEntry {
+        algorithm: "ed25519".to_string(),
+        public_key: hex::encode(verifying_key.to_bytes()),
+        signature: hex::encode(signature.to_bytes()),
+    };
+
+    manifest.signatures.push(entry.clone());
+    manifest.write_to_path(manifest_path)?;
+    Ok(entry)
+}
+
+pub fn inspect_artifact_manifest(manifest_path: &Path) -> CanvasResult<ContractManifest> {
+    ContractManifest::read_from_path(manifest_path)
+}
+
+pub fn verify_manifest_signatures(manifest: &ContractManifest) -> CanvasResult<()> {
+    if manifest.signatures.is_empty() {
+        return Ok(());
+    }
+
+    let payload = manifest_signing_payload(manifest)?;
+    for (index, signature_entry) in manifest.signatures.iter().enumerate() {
+        if signature_entry.algorithm != "ed25519" {
+            return Err(CanvasError::Validation(format!(
+                "Unsupported signature algorithm '{}' at index {}",
+                signature_entry.algorithm, index
+            )));
+        }
+
+        let public_key_bytes = hex::decode(&signature_entry.public_key).map_err(|_| {
+            CanvasError::Validation(format!("Signature {} has invalid public key hex", index))
+        })?;
+        let public_key_array: [u8; 32] = public_key_bytes.as_slice().try_into().map_err(|_| {
+            CanvasError::Validation(format!("Signature {} public key must be 32 bytes", index))
+        })?;
+        let verifying_key =
+            ed25519_dalek::VerifyingKey::from_bytes(&public_key_array).map_err(|e| {
+                CanvasError::Validation(format!(
+                    "Signature {} public key parse failed: {}",
+                    index, e
+                ))
+            })?;
+
+        let signature_bytes = hex::decode(&signature_entry.signature).map_err(|_| {
+            CanvasError::Validation(format!("Signature {} has invalid signature hex", index))
+        })?;
+        let signature = ed25519_dalek::Signature::from_slice(&signature_bytes).map_err(|e| {
+            CanvasError::Validation(format!("Signature {} parse failed: {}", index, e))
+        })?;
+
+        verifying_key.verify(&payload, &signature).map_err(|e| {
+            CanvasError::Validation(format!("Signature {} verification failed: {}", index, e))
+        })?;
+    }
+
+    Ok(())
 }
 
 fn default_node_pack_lock_json() -> serde_json::Value {
@@ -465,6 +538,53 @@ fn hash_wit_directory(wit_dir: &Path) -> CanvasResult<String> {
         files.push((name, bytes));
     }
     hash_named_files(&files)
+}
+
+fn manifest_signing_payload(manifest: &ContractManifest) -> CanvasResult<Vec<u8>> {
+    let mut unsigned = manifest.clone();
+    unsigned.signatures.clear();
+    let value = serde_json::to_value(&unsigned).map_err(CanvasError::Serialization)?;
+    let canonical = canonicalize_json_value(&value);
+    serde_json::to_vec(&canonical).map_err(CanvasError::Serialization)
+}
+
+fn decode_signing_key(private_key_hex: &str) -> CanvasResult<ed25519_dalek::SigningKey> {
+    let mut key_bytes = hex::decode(private_key_hex.trim())
+        .map_err(|_| CanvasError::Validation("Invalid signing key hex".to_string()))?;
+
+    let key = match key_bytes.len() {
+        32 => {
+            let mut seed_bytes: [u8; 32] = key_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| CanvasError::Validation("Invalid signing key length".to_string()))?;
+            let key = ed25519_dalek::SigningKey::from_bytes(&seed_bytes);
+            seed_bytes.zeroize();
+            key
+        }
+        64 => {
+            let mut keypair_bytes: [u8; 64] = key_bytes.as_slice().try_into().map_err(|_| {
+                CanvasError::Validation(
+                    "Signing key must be 32-byte seed or 64-byte keypair".to_string(),
+                )
+            })?;
+            let key =
+                ed25519_dalek::SigningKey::from_keypair_bytes(&keypair_bytes).map_err(|e| {
+                    CanvasError::Validation(format!("Invalid Ed25519 signing key: {}", e))
+                })?;
+            keypair_bytes.zeroize();
+            key
+        }
+        _ => {
+            key_bytes.zeroize();
+            return Err(CanvasError::Validation(
+                "Signing key must be 32-byte seed or 64-byte keypair".to_string(),
+            ));
+        }
+    };
+
+    key_bytes.zeroize();
+    Ok(key)
 }
 
 fn hash_named_files(files: &[(String, Vec<u8>)]) -> CanvasResult<String> {
@@ -647,5 +767,40 @@ mod tests {
         assert!(err
             .to_string()
             .contains("WASM runtime profile validation failed"));
+    }
+
+    #[test]
+    fn sign_and_verify_manifest_signature_roundtrip() {
+        let graph = load_fixture("simple_arithmetic");
+        let config = Config::default();
+        let tmp = tempfile::tempdir().unwrap();
+        let out = build_artifact_bundle(&graph, &config, tmp.path()).unwrap();
+
+        let key = ed25519_dalek::SigningKey::from_bytes(&[3u8; 32]);
+        let key_hex = hex::encode(key.to_keypair_bytes());
+        let entry = sign_artifact_manifest(&out.manifest_path, &key_hex).unwrap();
+        assert_eq!(entry.algorithm, "ed25519");
+
+        let verified = verify_artifact_manifest(&out.manifest_path).unwrap();
+        assert_eq!(verified.status, "pass");
+    }
+
+    #[test]
+    fn verify_rejects_invalid_signature() {
+        let graph = load_fixture("simple_arithmetic");
+        let config = Config::default();
+        let tmp = tempfile::tempdir().unwrap();
+        let out = build_artifact_bundle(&graph, &config, tmp.path()).unwrap();
+
+        let key = ed25519_dalek::SigningKey::from_bytes(&[5u8; 32]);
+        let key_hex = hex::encode(key.to_keypair_bytes());
+        sign_artifact_manifest(&out.manifest_path, &key_hex).unwrap();
+
+        let mut manifest = ContractManifest::read_from_path(&out.manifest_path).unwrap();
+        manifest.signatures[0].signature = "00".repeat(64);
+        manifest.write_to_path(&out.manifest_path).unwrap();
+
+        let err = verify_artifact_manifest(&out.manifest_path).unwrap_err();
+        assert!(err.to_string().contains("verification failed"));
     }
 }

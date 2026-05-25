@@ -138,6 +138,45 @@ canvas-contracts artifact verify --manifest <FILE>
 canvas-contracts artifact verify --manifest dist/contracts/DormancyOracle/canvas.contract.json
 ```
 
+### `artifact sign`
+
+Sign a manifest using an Ed25519 hex key from an environment variable or file.
+
+```bash
+canvas-contracts artifact sign --manifest <FILE> (--key-env <ENV_VAR> | --key-file <FILE>)
+```
+
+| Option | Description |
+|--------|-------------|
+| `-m, --manifest <FILE>` | Path to `canvas.contract.json` |
+| `--key-env <ENV_VAR>` | Environment variable containing hex signing key |
+| `--key-file <FILE>` | File containing hex signing key |
+
+**Examples:**
+```bash
+canvas-contracts artifact sign --manifest dist/contracts/DormancyOracle/canvas.contract.json --key-env CANVAS_SIGNING_KEY
+canvas-contracts artifact sign --manifest dist/contracts/DormancyOracle/canvas.contract.json --key-file ./signing.key
+```
+
+### `artifact inspect`
+
+Inspect a manifest and print summary details (or full JSON).
+
+```bash
+canvas-contracts artifact inspect --manifest <FILE> [--json]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-m, --manifest <FILE>` | Path to `canvas.contract.json` |
+| `--json` | Emit full manifest JSON |
+
+**Example:**
+```bash
+canvas-contracts artifact inspect --manifest dist/contracts/DormancyOracle/canvas.contract.json
+canvas-contracts artifact inspect --manifest dist/contracts/DormancyOracle/canvas.contract.json --json
+```
+
 ### `wasm validate`
 
 Validate a WASM module against a runtime profile (`baals-wasm-v1` by default).
@@ -286,6 +325,7 @@ canvas-contracts simulate --graph tests/fixtures/simple_arithmetic.json
 canvas-contracts deploy --contract out.wasm --key my-key
 canvas-contracts artifact build --input tests/fixtures/dormancy_oracle.json --out dist/contracts/DormancyOracle
 canvas-contracts artifact verify --manifest dist/contracts/DormancyOracle/canvas.contract.json
+canvas-contracts artifact inspect --manifest dist/contracts/DormancyOracle/canvas.contract.json
 canvas-contracts wasm validate --wasm dist/contracts/DormancyOracle/contract.wasm --out dist/contracts/DormancyOracle/validation.json
 canvas-contracts wit validate --wit dist/contracts/DormancyOracle/wit
 canvas-contracts archive verify --content-hash sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
