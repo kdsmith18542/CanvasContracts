@@ -2,7 +2,7 @@
 
 Welcome to the Canvas Contracts documentation!
 
-> **Current release state (2026-05-23):** All core features implemented — graph validation, real WASM compilation, wasmtime runtime, BaaLS integration, 14 node types, frontend visual editor. 75 tests pass. See [plan.md](../plan.md) for full development status.
+> **Current release state (2026-05-25):** Core graph/runtime/compiler pipeline is active, plus verifiable artifact generation, WIT package tooling, ChronoNode archive submission, and BaaLS deployment. See [plan.md](../plan.md) for milestone tracking.
 
 ## Table of Contents
 
@@ -17,12 +17,12 @@ Welcome to the Canvas Contracts documentation!
 - [CLI Commands](reference/cli.md) — Available `canvas-contracts` commands
 
 ### Development
-- [API Reference](api/README.md) — Library API documentation *(aspirational, predates implementation)*
+- [API Reference](api/README.md) — Library API documentation
 - [Plan](../plan.md) — Current development plan and milestone status
 - [Agent Context](../agents.md) — Quick reference for contributors
 
 ### Deployment
-- [Deployment Guide](deployment/README.md) — Production deployment *(aspirational — deployment module is feature-gated, not yet implemented)*
+- [Deployment Guide](deployment/README.md) — Production deployment
 
 ## What is Canvas Contracts?
 
@@ -31,7 +31,7 @@ Canvas Contracts is a visual smart contract development platform. Users compose 
 | Feature | Status |
 |---------|--------|
 | Visual graph editor | ✅ Drag-and-drop canvas + PropertyPanel |
-| Node types | ✅ 14 (arithmetic, logic, storage, control, crypto) |
+| Node types | ✅ 39 built-ins (core + BaaLS + ChronoNode + Resurgence) |
 | Graph validation | ✅ Cycle detection, type checking, reachability |
 | Graph simulation | ✅ Toposort data-flow execution |
 | WASM compilation | ✅ `wasm-encoder` + wasmtime validation |
@@ -40,15 +40,21 @@ Canvas Contracts is a visual smart contract development platform. Users compose 
 | Frontend | ✅ Toolbar, undo/redo, save/load, deploy, ContractMonitor |
 | Debugger | ✅ Breakpoints, step-through |
 | Dormancy Oracle | ✅ Validates and simulates end-to-end |
-| AI assistant | ⚠️ Feature-gated, not yet un-gated |
-| Deployment (blue-green, scaling) | ⚠️ Feature-gated, not yet implemented |
+| AI assistant | ✅ Compiled module + frontend panel |
+| Deployment (blue-green, scaling) | ✅ Compiled module + CLI integration path |
+
+## Artifact Consumers
+
+- **BaaLS** consumes `contract.wasm` plus deployment metadata from `canvas.contract.json` (runtime profile, hashes, receipt fields).
+- **ChronoNode** consumes archived bundle payloads and returns a verifiable `sha256:<hex>` content hash plus storage pointer.
+- **Resurgence** consumes generated proofs/events and audit material (`safety-report.json`, ABI + WIT package) for DormancyOracle workflows.
 
 ## Quick Start
 
 ```bash
 # Build and test
 cargo build           # 0 errors, 0 warnings
-cargo test            # 75 tests pass
+cargo test
 
 # CLI
 canvas-contracts validate --input graph.json

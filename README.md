@@ -4,17 +4,19 @@
 
 Canvas Contracts is a visual smart contract development platform. Users compose directed graphs of pre-built nodes (arithmetic, conditionals, storage ops, crypto) that compile to WASM bytecode for deployment on BaaLS.
 
-> **Development status**: All core features implemented — graph validation, execution, real WASM compilation, wasmtime runtime, BaaLS integration, 14 node types, full frontend. 75 tests pass, 0 warnings.
+> **Development status**: Core pipeline and artifact workflow are active — graph validation/execution, WASM compilation/runtime validation, verifiable artifact bundles, WIT package generation, ChronoNode archive submission, and BaaLS deployment.
 
 ## What Works
 
 - **Visual graph editor**: Drag-and-drop canvas (`@xyflow/react` + Tauri desktop app)
-- **14 node types**: Arithmetic (Add/Sub/Mul/Div), Logic (And/Or/Not/If), Storage (Read/Write), Control (Start/End), Crypto (VerifySignature/DecodeProof)
+- **39 built-in node types**: Core control/logic/state/crypto plus BaaLS, ChronoNode, and Resurgence node families
 - **Graph validation**: Cycle detection, port type checking, reachability analysis — 14 types handled
-- **Graph simulation**: Execute graphs via toposort data-flow engine — test logic without deploying
+- **Graph simulation**: Execute graphs via toposort data-flow engine before deployment
 - **Real WASM compilation**: `wasm-encoder` produces valid, input-dependent WASM bytecode; wasmtime-validated
 - **Wasmtime runtime**: Sandboxed execution with fuel-based gas metering; host functions for BaaLS storage
 - **BaaLS integration**: `BaalsClient` trait with Mock + HTTP client (real BaaLS REST API); Ed25519 signing
+- **Artifact pipeline**: `artifact build/verify/sign/inspect`, runtime profile checks, WIT hashing, safety reports
+- **Archive integration**: ChronoNode archive submit + content-hash verification + manifest archive writeback
 - **Frontend**: Toolbar (compile/validate/simulate/deploy) all wired; PropertyPanel; undo/redo; save/load; ContractMonitor
 - **Debugger**: Breakpoints, step-through, wired to GraphExecutor
 - **DormancyOracle**: Resurgence Protocol oracle graph validates and simulates end-to-end
@@ -39,13 +41,16 @@ make install
 ```bash
 # Backend
 cargo build           # 0 errors, 0 warnings
-cargo test            # 75 tests pass
+cargo test
 
 # CLI
 canvas-contracts validate --input graph.json
 canvas-contracts simulate --graph tests/fixtures/simple_arithmetic.json
 canvas-contracts compile --input graph.json --output out.wasm
-canvas-contracts deploy --contract out.wasm --key my-key --args '{}'
+canvas-contracts artifact build --input tests/fixtures/dormancy_oracle.json --out dist/contracts/DormancyOracle
+canvas-contracts artifact verify --manifest dist/contracts/DormancyOracle/canvas.contract.json
+canvas-contracts deploy --manifest dist/contracts/DormancyOracle/canvas.contract.json --key my-key --args '{}'
+canvas-contracts archive submit --bundle DormancyOracle.canvasbundle.tar.zst --chrononode-url https://chrono.local --manifest dist/contracts/DormancyOracle/canvas.contract.json
 
 # Frontend
 cd frontend
@@ -60,7 +65,7 @@ npm run tauri dev     # Tauri desktop app (needs libsoup-2.4 on Linux)
 canvascontract/
 ├── src/                       # Rust backend
 │   ├── compiler/              # graph → IR → AST → WASM → wasmtime validation
-│   ├── nodes/                 # 14 node definitions + implementations
+│   ├── nodes/                 # Built-in node definitions + implementations
 │   ├── wasm/                  # Real wasmtime runtime (fuel metering)
 │   ├── baals/                 # BaalsClient trait, Mock + HTTP client
 │   └── debugger/              # Breakpoint debugger
@@ -98,7 +103,7 @@ canvascontract/
 ## Testing
 
 ```bash
-# Rust (75 tests, 0 failures)
+# Rust
 cargo test
 
 # Frontend type check

@@ -3,9 +3,10 @@
 use canvas_contracts::{
     Compiler, WasmRuntime, create_client, BaalsClient,
     artifact::hash::{canonical_graph_hash, hash_bytes_prefixed, GRAPH_CANONICALIZATION},
+    artifact::build_artifact_bundle,
     nodes::builtin_node_definitions,
     types::VisualGraph,
-    error::CanvasResult,
+    error::{CanvasError, CanvasResult},
     debugger::DebugSession,
     nodes::NodeRegistry,
     adapter::ChronoNodeClient,
@@ -360,62 +361,105 @@ async fn verify_proof(
 
 #[tauri::command]
 async fn export_audit_bundle(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     graph: VisualGraph,
 ) -> Result<serde_json::Value, String> {
-    let compiler_guard = lock_mut(&state.compiler)?;
-    let compiler = compiler_guard.as_ref().ok_or("Compiler not initialized")?;
+    let config = canvas_contracts::config::Config::default();
+    let temp_dir = std::env::temp_dir().join(format!(
+        "canvas-audit-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos()
+    ));
 
-    let result = compiler.compile(&graph).map_err(|e| e.to_string())?;
+    let build_output = build_artifact_bundle(&graph, &config, &temp_dir).map_err(|e| e.to_string())?;
 
-    // Create a mock validation report
-    let validator = compiler.validator().map_err(|e| e.to_string())?;
-    let val_res = validator.validate(&graph).map_err(|e| e.to_string())?;
+    let bundle = (|| -> Result<serde_json::Value, CanvasError> {
+        let wasm_bytes = std::fs::read(&build_output.wasm_path).map_err(CanvasError::Io)?;
+        let abi: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&build_output.abi_path).map_err(CanvasError::Io)?,
+        )
+        .map_err(CanvasError::Serialization)?;
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&build_output.manifest_path).map_err(CanvasError::Io)?,
+        )
+        .map_err(CanvasError::Serialization)?;
+        let safety_report: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&build_output.safety_report_path).map_err(CanvasError::Io)?,
+        )
+        .map_err(CanvasError::Serialization)?;
+        let canonical_graph: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&build_output.canonical_graph_path).map_err(CanvasError::Io)?,
+        )
+        .map_err(CanvasError::Serialization)?;
 
-    let graph_hash = canonical_graph_hash(&graph).map_err(|e| e.to_string())?;
-    let wasm_hash = hash_bytes_prefixed(&result.wasm_bytes);
-    let mut node_types: Vec<String> = graph.nodes.iter().map(|n| n.node_type.clone()).collect();
-    node_types.sort();
-    node_types.dedup();
+        let mut wit_files: Vec<serde_json::Value> = Vec::new();
+        let mut entries: Vec<_> = std::fs::read_dir(&build_output.wit_dir)
+            .map_err(CanvasError::Io)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(CanvasError::Io)?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            if !entry.file_type().map_err(CanvasError::Io)?.is_file() {
+                continue;
+            }
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let content = std::fs::read_to_string(entry.path()).map_err(CanvasError::Io)?;
+            wit_files.push(serde_json::json!({
+                "name": file_name,
+                "content": content,
+            }));
+        }
 
-    let lock_json = serde_json::json!({
-        "schema_version": "canvas.graph.lock.v1",
-        "graph_schema_version": graph.schema_version,
-        "project_name": graph.name,
-        "target_adapter": graph.metadata.get("target_adapter").cloned().unwrap_or_else(|| "baals".to_string()),
-        "graph_canonicalization": GRAPH_CANONICALIZATION,
-        "node_count": graph.nodes.len(),
-        "connection_count": graph.connections.len(),
-        "node_types": node_types,
-        "gas_estimate": result.gas_estimate,
-        "compiler": {
-            "name": env!("CARGO_PKG_NAME"),
-            "version": canvas_contracts::VERSION,
-            "wasm_target": "wasm32-unknown-unknown",
-            "wasm_encoder_version": "0.38",
-            "wasmtime_validation_version": "43.0.1"
-        },
-        "graph_hash": graph_hash,
-        "wasm_hash": wasm_hash
-    });
+        let mut node_types: Vec<String> = graph.nodes.iter().map(|n| n.node_type.clone()).collect();
+        node_types.sort();
+        node_types.dedup();
 
-    let val_json = serde_json::json!({
-        "schema_version": "canvas.validation.v1",
-        "graph_schema_version": graph.schema_version,
-        "graph_hash": canonical_graph_hash(&graph).map_err(|e| e.to_string())?,
-        "graph_canonicalization": GRAPH_CANONICALIZATION,
-        "target_adapter": graph.metadata.get("target_adapter").cloned().unwrap_or_else(|| "baals".to_string()),
-        "node_count": graph.nodes.len(),
-        "connection_count": graph.connections.len(),
-        "is_valid": val_res.is_valid,
-        "errors": val_res.errors,
-        "warnings": val_res.warnings
-    });
+        let lock_json = serde_json::json!({
+            "schema_version": "canvas.graph.lock.v1",
+            "graph_schema_version": graph.schema_version,
+            "project_name": graph.name,
+            "target_adapter": graph.metadata.get("target_adapter").cloned().unwrap_or_else(|| "baals".to_string()),
+            "graph_canonicalization": GRAPH_CANONICALIZATION,
+            "node_count": graph.nodes.len(),
+            "connection_count": graph.connections.len(),
+            "node_types": node_types,
+            "compiler": {
+                "name": env!("CARGO_PKG_NAME"),
+                "version": canvas_contracts::VERSION,
+            },
+            "graph_hash": canonical_graph_hash(&graph)?,
+            "wasm_hash": hash_bytes_prefixed(&wasm_bytes),
+        });
 
-    Ok(serde_json::json!({
-        "wasm_bytes": hex::encode(result.wasm_bytes),
-        "abi": result.abi,
-        "lock": lock_json,
-        "validation_report": val_json
-    }))
+        let validation_report = serde_json::json!({
+            "schema_version": "canvas.validation.v1",
+            "graph_hash": canonical_graph_hash(&graph)?,
+            "is_valid": safety_report.get("status").and_then(|v| v.as_str()) == Some("pass"),
+            "warnings": safety_report.get("warnings").cloned().unwrap_or_else(|| serde_json::json!([])),
+            "errors": safety_report.get("errors").cloned().unwrap_or_else(|| serde_json::json!([])),
+        });
+
+        Ok(serde_json::json!({
+            "wasm_bytes": hex::encode(wasm_bytes),
+            "abi": abi,
+            "manifest": manifest,
+            "safety_report": safety_report,
+            "canonical_graph": canonical_graph,
+            "wit_files": wit_files,
+            "lock": lock_json,
+            "validation_report": validation_report,
+            "archive": {
+                "status": "not_archived",
+                "storage_pointer": null,
+                "content_hash": null
+            }
+        }))
+    })();
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    bundle.map_err(|e| e.to_string())
 }

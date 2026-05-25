@@ -1,0 +1,18 @@
+{
+  "status": "pass",
+  "graph_hash": "sha256:3e32a9cf3e0f4af6c6481f1adf901672566afc6157a17005aaa5ffa5d4c0071a",
+  "node_pack_lock_hash": "sha256:2d902e610d5224c6ff3ed3f1e171ee728cb0b455a3bfeac86d957e3fa814594c",
+  "wasm_hash": "sha256:53967f0201372bee5f671e357a116729f94cdcd5e1fe5399c3889b81d4e51c63",
+  "wit_hash": "sha256:3297aa65fc1b6a3d60796ed03eec3e87d1885663cc96bfcec1854dfd02d33faf",
+  "json_abi_hash": "sha256:5a0acb6cb08c096642d69b634d6f670fdd7a83fac714a8cde0362823bbb310fe",
+  "safety_report_hash": "sha256:e73c5adbe15a71dfb4225438d3601fff0730cb33f0f8d6233fd6602e58a423dd",
+  "wasm_size_bytes": 202,
+  "imports": [
+    "baals.baals_write_storage",
+    "crypto.crypto_decode_proof",
+    "crypto.crypto_verify_signature"
+  ],
+  "exports": [
+    "main"
+  ]
+}

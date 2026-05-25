@@ -4,11 +4,16 @@ use clap::{Parser, Subcommand};
 use log::{error, info};
 
 use canvas_contracts::{
-    abi::{generate_wit_package, hash_wit_package, validate_wit_package},
+    abi::{
+        generate_wit_package, generate_wit_package_from_graph, hash_wit_package,
+        validate_wit_package,
+    },
     artifact::{
         build_artifact_bundle,
         hash::{canonical_graph_hash, hash_bytes_prefixed, GRAPH_CANONICALIZATION},
-        inspect_artifact_manifest, sign_artifact_manifest, verify_artifact_manifest,
+        inspect_artifact_manifest,
+        manifest::ContractManifest,
+        sign_artifact_manifest, verify_artifact_manifest,
     },
     chrononode::{submit_artifact_bundle, validate_content_hash_format},
     compiler::{Compiler, GraphExecutor},
@@ -79,9 +84,13 @@ enum Commands {
 
     /// Deploy a contract to BaaLS
     Deploy {
-        /// Contract WASM file
+        /// Contract WASM file (legacy path; prefer --manifest)
         #[arg(short, long)]
-        contract: String,
+        contract: Option<String>,
+
+        /// Path to artifact manifest (canvas.contract.json)
+        #[arg(long)]
+        manifest: Option<String>,
 
         /// Constructor arguments (JSON)
         #[arg(short, long)]
@@ -211,7 +220,7 @@ enum WasmCommands {
 enum WitCommands {
     /// Generate WIT package files in an output directory
     Generate {
-        /// Optional source graph file (reserved for future graph-driven WIT generation)
+        /// Optional source graph file for graph-driven WIT generation
         #[arg(short, long)]
         input: Option<String>,
         /// Output directory for WIT files
@@ -236,6 +245,9 @@ enum ArchiveCommands {
         /// ChronoNode base URL
         #[arg(short = 'u', long)]
         chrononode_url: String,
+        /// Optional manifest to update with archive pointer fields
+        #[arg(short, long)]
+        manifest: Option<String>,
     },
     /// Verify archive content-hash format
     Verify {
@@ -287,9 +299,16 @@ fn main() -> CanvasResult<()> {
 
         Some(Commands::Deploy {
             contract,
+            manifest,
             args,
             key,
-        }) => deploy_contract(contract, args.as_deref(), key, &config_manager)?,
+        }) => deploy_contract(
+            contract.as_deref(),
+            manifest.as_deref(),
+            args.as_deref(),
+            key,
+            &config_manager,
+        )?,
 
         Some(Commands::Editor { port, host }) => start_editor(*port, host, &config_manager)?,
 
@@ -342,8 +361,9 @@ fn main() -> CanvasResult<()> {
             ArchiveCommands::Submit {
                 bundle,
                 chrononode_url,
+                manifest,
             } => {
-                archive_submit(bundle, chrononode_url)?;
+                archive_submit(bundle, chrononode_url, manifest.as_deref())?;
             }
             ArchiveCommands::Verify { content_hash } => {
                 archive_verify(content_hash)?;
@@ -522,14 +542,20 @@ fn wasm_inspect(wasm: &str, as_json: bool, wat_out: Option<&str>) -> CanvasResul
 }
 
 fn wit_generate(input: Option<&str>, out: &str) -> CanvasResult<()> {
-    if let Some(path) = input {
-        info!(
-            "WIT generation currently uses the canonical package template; graph input '{}' is reserved for graph-driven generation",
-            path
-        );
-    }
     let out_dir = std::path::Path::new(out);
-    let files = generate_wit_package(out_dir)?;
+    let files = if let Some(path) = input {
+        let graph_content = std::fs::read_to_string(path).map_err(CanvasError::Io)?;
+        let graph: VisualGraph =
+            serde_json::from_str(&graph_content).map_err(CanvasError::Serialization)?;
+        info!(
+            "Generating graph-driven WIT package from '{}' into '{}'",
+            path,
+            out_dir.display()
+        );
+        generate_wit_package_from_graph(&graph, out_dir)?
+    } else {
+        generate_wit_package(out_dir)?
+    };
     let hash = hash_wit_package(out_dir)?;
     info!(
         "Generated {} WIT files in {}",
@@ -559,13 +585,25 @@ fn wit_validate(wit: &str) -> CanvasResult<()> {
     Ok(())
 }
 
-fn archive_submit(bundle: &str, chrononode_url: &str) -> CanvasResult<()> {
+fn archive_submit(bundle: &str, chrononode_url: &str, manifest: Option<&str>) -> CanvasResult<()> {
     let result = submit_artifact_bundle(std::path::Path::new(bundle), chrononode_url)?;
     info!("Archive submit successful");
     info!("Storage pointer: {}", result.storage_pointer);
     info!("Content hash: {}", result.content_hash);
-    if let Some(checkpoint) = result.checkpoint_id {
+    if let Some(checkpoint) = &result.checkpoint_id {
         info!("Checkpoint id: {}", checkpoint);
+    }
+
+    if let Some(manifest_path) = manifest {
+        let manifest_path = std::path::Path::new(manifest_path);
+        let mut contract_manifest = ContractManifest::read_from_path(manifest_path)?;
+        contract_manifest.archive.chrononode_pointer = Some(result.storage_pointer.clone());
+        contract_manifest.archive.checkpoint_id = result.checkpoint_id.clone();
+        contract_manifest.write_to_path(manifest_path)?;
+        info!(
+            "Updated manifest archive fields at {}",
+            manifest_path.display()
+        );
     }
     Ok(())
 }
@@ -799,15 +837,14 @@ fn simulate_contract(
 }
 
 fn deploy_contract(
-    contract: &str,
+    contract: Option<&str>,
+    manifest: Option<&str>,
     args: Option<&str>,
     key: &str,
     config_manager: &ConfigManager,
 ) -> CanvasResult<()> {
-    info!("Deploying contract: {}", contract);
-
-    // Load WASM bytes
-    let wasm_bytes = std::fs::read(contract).map_err(CanvasError::Io)?;
+    let (wasm_bytes, manifest_path) = resolve_deploy_wasm(contract, manifest)?;
+    info!("Deploying contract artifact ({} bytes)", wasm_bytes.len());
 
     // Load private key with basic filesystem permission hardening.
     let private_key = read_private_key_file(key)?;
@@ -831,7 +868,46 @@ fn deploy_contract(
     info!("Transaction hash: {}", deployment_result.transaction_hash);
     info!("Gas used: {}", deployment_result.gas_used);
 
+    if let Some(manifest_path) = manifest_path {
+        let mut contract_manifest = ContractManifest::read_from_path(&manifest_path)?;
+        contract_manifest.deployment.contract_id = Some(deployment_result.contract_address.clone());
+        contract_manifest.deployment.transaction_hash =
+            Some(deployment_result.transaction_hash.clone());
+        contract_manifest.deployment.block_height = Some(deployment_result.block_number);
+        contract_manifest.write_to_path(&manifest_path)?;
+        info!("Updated deployment receipt in {}", manifest_path.display());
+    }
+
     Ok(())
+}
+
+fn resolve_deploy_wasm(
+    contract: Option<&str>,
+    manifest: Option<&str>,
+) -> CanvasResult<(Vec<u8>, Option<std::path::PathBuf>)> {
+    match (contract, manifest) {
+        (Some(_), Some(_)) => Err(CanvasError::Config(
+            "Provide either --contract or --manifest, not both".to_string(),
+        )),
+        (None, None) => Err(CanvasError::Config(
+            "Provide --manifest for bundle-first deploy (or --contract for legacy deploy)"
+                .to_string(),
+        )),
+        (Some(contract_path), None) => {
+            let wasm_bytes = std::fs::read(contract_path).map_err(CanvasError::Io)?;
+            Ok((wasm_bytes, None))
+        }
+        (None, Some(manifest_path)) => {
+            let manifest_path = std::path::PathBuf::from(manifest_path);
+            verify_artifact_manifest(&manifest_path)?;
+            let bundle_dir = manifest_path.parent().ok_or_else(|| {
+                CanvasError::Validation("Manifest path must have a parent directory".to_string())
+            })?;
+            let wasm_path = bundle_dir.join("contract.wasm");
+            let wasm_bytes = std::fs::read(&wasm_path).map_err(CanvasError::Io)?;
+            Ok((wasm_bytes, Some(manifest_path)))
+        }
+    }
 }
 
 fn read_private_key_file(path: &str) -> CanvasResult<String> {

@@ -82,21 +82,22 @@ canvas-contracts simulate --contract contract.wasm -i input.json -g 500000
 
 ### `deploy`
 
-Deploy a compiled WASM contract to BaaLS.
+Deploy a contract to BaaLS.
 
 ```bash
-canvas-contracts deploy --contract <FILE> --key <FILE> [OPTIONS]
+canvas-contracts deploy (--manifest <FILE> | --contract <FILE>) --key <FILE> [OPTIONS]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `-c, --contract <FILE>` | Contract WASM file |
+| `--manifest <FILE>` | Path to `canvas.contract.json` (preferred, verified before deploy) |
+| `-c, --contract <FILE>` | Contract WASM file (legacy path) |
 | `-k, --key <FILE>` | Private key file |
 | `-a, --args <JSON>` | Constructor arguments (JSON) |
 
 **Example:**
 ```bash
-canvas-contracts deploy --contract out.wasm --key my-key
+canvas-contracts deploy --manifest dist/contracts/DormancyOracle/canvas.contract.json --key my-key
 canvas-contracts deploy --contract out.wasm --key my-key --args '{"name": "test"}'
 ```
 
@@ -219,7 +220,7 @@ canvas-contracts wasm inspect --wasm dist/contracts/DormancyOracle/contract.wasm
 
 ### `wit generate`
 
-Generate the canonical WIT package files.
+Generate WIT package files (canonical template or graph-driven).
 
 ```bash
 canvas-contracts wit generate --out <DIR> [OPTIONS]
@@ -228,11 +229,12 @@ canvas-contracts wit generate --out <DIR> [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `-o, --out <DIR>` | Output directory for generated WIT files |
-| `-i, --input <FILE>` | Optional graph file (reserved for future graph-driven WIT generation) |
+| `-i, --input <FILE>` | Optional graph file used for graph-driven WIT generation metadata |
 
 **Example:**
 ```bash
 canvas-contracts wit generate --out dist/contracts/DormancyOracle/wit
+canvas-contracts wit generate --input tests/fixtures/dormancy_oracle.json --out dist/contracts/DormancyOracle/wit
 ```
 
 ### `wit validate`
@@ -264,10 +266,11 @@ canvas-contracts archive submit --bundle <FILE> --chrononode-url <URL>
 |--------|-------------|
 | `-b, --bundle <FILE>` | Bundle file path (for example, `.canvasbundle.tar.zst`) |
 | `-u, --chrononode-url <URL>` | ChronoNode base URL |
+| `-m, --manifest <FILE>` | Optional manifest path to update with archive pointer/checkpoint fields |
 
 **Example:**
 ```bash
-canvas-contracts archive submit --bundle DormancyOracle.canvasbundle.tar.zst --chrononode-url https://chrono.baals.network
+canvas-contracts archive submit --bundle DormancyOracle.canvasbundle.tar.zst --chrononode-url https://chrono.baals.network --manifest dist/contracts/DormancyOracle/canvas.contract.json
 ```
 
 ### `archive verify`
@@ -322,12 +325,13 @@ canvas-contracts info
 canvas-contracts validate --input contract.json
 canvas-contracts compile --input contract.json --output out.wasm
 canvas-contracts simulate --graph tests/fixtures/simple_arithmetic.json
-canvas-contracts deploy --contract out.wasm --key my-key
 canvas-contracts artifact build --input tests/fixtures/dormancy_oracle.json --out dist/contracts/DormancyOracle
 canvas-contracts artifact verify --manifest dist/contracts/DormancyOracle/canvas.contract.json
 canvas-contracts artifact inspect --manifest dist/contracts/DormancyOracle/canvas.contract.json
 canvas-contracts wasm validate --wasm dist/contracts/DormancyOracle/contract.wasm --out dist/contracts/DormancyOracle/validation.json
 canvas-contracts wit validate --wit dist/contracts/DormancyOracle/wit
+canvas-contracts deploy --manifest dist/contracts/DormancyOracle/canvas.contract.json --key my-key
+canvas-contracts archive submit --bundle DormancyOracle.canvasbundle.tar.zst --chrononode-url https://chrono.baals.network --manifest dist/contracts/DormancyOracle/canvas.contract.json
 canvas-contracts archive verify --content-hash sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 canvas-contracts editor
 canvas-contracts info

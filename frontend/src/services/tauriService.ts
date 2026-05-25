@@ -14,6 +14,22 @@ export interface DebugState {
     variables: Record<string, any>
 }
 
+export interface AuditBundleResult {
+    wasm_bytes: string
+    abi: any
+    manifest: any
+    safety_report: any
+    canonical_graph: any
+    wit_files: Array<{ name: string; content: string }>
+    lock: any
+    validation_report: any
+    archive: {
+        status: string
+        storage_pointer: string | null
+        content_hash: string | null
+    }
+}
+
 export class TauriService {
     static async compileContract(graph: VisualGraph, optimizationLevel: number = 1): Promise<CompilationResult> {
         try {
@@ -141,9 +157,9 @@ export class TauriService {
         }
     }
 
-    static async exportAuditBundle(graph: VisualGraph): Promise<any> {
+    static async exportAuditBundle(graph: VisualGraph): Promise<AuditBundleResult> {
         try {
-            return await invoke('export_audit_bundle', { graph })
+            return await invoke('export_audit_bundle', { graph }) as AuditBundleResult
         } catch (error) {
             throw new Error(`Audit bundle export failed: ${error}`)
         }

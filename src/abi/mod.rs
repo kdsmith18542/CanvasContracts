@@ -2,7 +2,10 @@ use std::path::{Path, PathBuf};
 
 use sha2::Digest;
 
-use crate::error::{CanvasError, CanvasResult};
+use crate::{
+    error::{CanvasError, CanvasResult},
+    types::VisualGraph,
+};
 
 pub const WIT_PACKAGE_NAME: &str = "baals:contract@1.0.0";
 pub const DEFAULT_WIT_SOURCE_DIR: &str = "wit/baals-contract-v1";
@@ -49,6 +52,38 @@ pub fn generate_wit_package(out_dir: &Path) -> CanvasResult<Vec<PathBuf>> {
         std::fs::copy(&src, &dest).map_err(CanvasError::Io)?;
         written.push(dest);
     }
+
+    Ok(written)
+}
+
+pub fn generate_wit_package_from_graph(
+    graph: &VisualGraph,
+    out_dir: &Path,
+) -> CanvasResult<Vec<PathBuf>> {
+    let written = generate_wit_package(out_dir)?;
+
+    // Make generation graph-aware while preserving the canonical package shape.
+    let contract_path = out_dir.join("contract.wit");
+    let mut contract_wit = std::fs::read_to_string(&contract_path).map_err(CanvasError::Io)?;
+
+    let mut node_types: Vec<String> = graph.nodes.iter().map(|n| n.node_type.clone()).collect();
+    node_types.sort();
+    node_types.dedup();
+
+    let target_adapter = graph
+        .metadata
+        .get("target_adapter")
+        .cloned()
+        .unwrap_or_else(|| "baals".to_string());
+
+    let header = format!(
+        "// Generated from graph: {}\n// Target adapter: {}\n// Node types: {}\n\n",
+        graph.name,
+        target_adapter,
+        node_types.join(", ")
+    );
+    contract_wit = format!("{}{}", header, contract_wit);
+    std::fs::write(contract_path, contract_wit).map_err(CanvasError::Io)?;
 
     Ok(written)
 }
@@ -144,5 +179,18 @@ mod tests {
         generate_wit_package(temp_dir.path()).unwrap();
         let hash = hash_wit_package(temp_dir.path()).unwrap();
         assert!(hash.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn generate_wit_package_from_graph_adds_graph_metadata_header() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let graph: VisualGraph =
+            serde_json::from_str(include_str!("../../tests/fixtures/simple_arithmetic.json"))
+                .unwrap();
+        generate_wit_package_from_graph(&graph, temp_dir.path()).unwrap();
+
+        let contract_wit = std::fs::read_to_string(temp_dir.path().join("contract.wit")).unwrap();
+        assert!(contract_wit.contains("// Generated from graph: Simple Arithmetic"));
+        assert!(contract_wit.contains("// Target adapter: baals"));
     }
 }
