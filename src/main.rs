@@ -606,6 +606,7 @@ fn compile_contract(
         .unwrap_or_else(|| "baals".to_string());
     let val_json = serde_json::json!({
         "schema_version": "canvas.validation.v1",
+        "graph_schema_version": graph.schema_version,
         "graph_hash": graph_hash,
         "graph_canonicalization": GRAPH_CANONICALIZATION,
         "target_adapter": target_adapter,
@@ -647,6 +648,7 @@ fn compile_contract(
     let lock_path = derive_compile_sidecar_path(output_path, "graph.lock.json");
     let lock_json = serde_json::json!({
         "schema_version": "canvas.graph.lock.v1",
+        "graph_schema_version": graph.schema_version,
         "project_name": graph.name,
         "target_adapter": target_adapter,
         "graph_canonicalization": GRAPH_CANONICALIZATION,

@@ -70,9 +70,24 @@ impl From<&str> for NodeType {
             "ReadStorage" | "WriteStorage" => NodeType::State,
             "Add" | "Subtract" | "Multiply" | "Divide" => NodeType::Arithmetic,
             "VerifySignature" | "DecodeProof" => NodeType::Cryptographic,
-            "GetSender" | "GetContractId" | "GetBlockTimestamp" | "GetBlockHeight" | "EmitEvent" | "Revert" | "HashSha256" | "CallContract" | "ReadCallResult" | "TransferValue" => NodeType::External,
-            "FetchChronoBlock" | "FetchCheckpoint" | "VerifyChronoProof" | "ExtractChronoEvent" | "ExtractTxBySender" | "ExtractTxByRecipient" | "VerifyArchiveRange" => NodeType::Time,
-            "CheckTokenAge" | "CheckTokenActivityWindow" | "CheckLiquidityDormancy" | "CheckGovernanceDormancy" | "CalculateDormancyScore" | "NormalizeDeadCoinRisk" | "GenerateDormancyProof" | "EmitDormancyOracleResult" => NodeType::Resurgence,
+            "GetSender" | "GetContractId" | "GetBlockTimestamp" | "GetBlockHeight"
+            | "EmitEvent" | "Revert" | "HashSha256" | "CallContract" | "ReadCallResult"
+            | "TransferValue" => NodeType::External,
+            "FetchChronoBlock"
+            | "FetchCheckpoint"
+            | "VerifyChronoProof"
+            | "ExtractChronoEvent"
+            | "ExtractTxBySender"
+            | "ExtractTxByRecipient"
+            | "VerifyArchiveRange" => NodeType::Time,
+            "CheckTokenAge"
+            | "CheckTokenActivityWindow"
+            | "CheckLiquidityDormancy"
+            | "CheckGovernanceDormancy"
+            | "CalculateDormancyScore"
+            | "NormalizeDeadCoinRisk"
+            | "GenerateDormancyProof"
+            | "EmitDormancyOracleResult" => NodeType::Resurgence,
             _ => NodeType::Custom,
         }
     }
@@ -287,6 +302,8 @@ impl Connection {
 /// Visual graph representation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisualGraph {
+    #[serde(default = "default_graph_schema_version")]
+    pub schema_version: String,
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
@@ -298,6 +315,7 @@ pub struct VisualGraph {
 impl VisualGraph {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
+            schema_version: default_graph_schema_version(),
             id: Uuid::new_v4(),
             name: name.into(),
             description: None,
@@ -376,11 +394,21 @@ impl VisualGraph {
 /// Contract compilation result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompilationResult {
+    #[serde(default = "default_compilation_schema_version")]
+    pub schema_version: String,
     pub wasm_bytes: Vec<u8>,
     pub abi: ContractABI,
     pub gas_estimate: Gas,
     pub warnings: Vec<String>,
     pub metadata: HashMap<String, String>,
+}
+
+pub fn default_graph_schema_version() -> String {
+    "canvas.graph.v1".to_string()
+}
+
+pub fn default_compilation_schema_version() -> String {
+    "canvas.compilation.v1".to_string()
 }
 
 /// Contract ABI (Application Binary Interface)
@@ -532,6 +560,27 @@ mod tests {
         let mut context = ExecutionContext::new(1000);
         assert!(context.use_gas(500).is_ok());
         assert!(context.use_gas(600).is_err());
+    }
+
+    #[test]
+    fn test_visual_graph_defaults_schema_version() {
+        let graph = VisualGraph::new("schema default graph");
+        assert_eq!(graph.schema_version, "canvas.graph.v1");
+    }
+
+    #[test]
+    fn test_visual_graph_deserialize_back_compat_without_schema_version() {
+        let raw = serde_json::json!({
+            "id": Uuid::new_v4(),
+            "name": "legacy graph",
+            "description": null,
+            "nodes": [],
+            "connections": [],
+            "metadata": {}
+        });
+
+        let graph: VisualGraph = serde_json::from_value(raw).unwrap();
+        assert_eq!(graph.schema_version, "canvas.graph.v1");
     }
 }
 

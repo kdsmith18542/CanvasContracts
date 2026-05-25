@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://canvascontracts.dev/schemas/canvas.graph.lock.v1.json",
+  "title": "Canvas Graph Lock v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "graph_schema_version",
+    "project_name",
+    "target_adapter",
+    "graph_canonicalization",
+    "node_count",
+    "connection_count",
+    "node_types",
+    "gas_estimate",
+    "compiler",
+    "graph_hash",
+    "wasm_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "canvas.graph.lock.v1"
+    },
+    "graph_schema_version": {
+      "type": "string",
+      "const": "canvas.graph.v1"
+    },
+    "project_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_adapter": {
+      "type": "string",
+      "minLength": 1
+    },
+    "graph_canonicalization": {
+      "type": "string",
+      "const": "canvas-json-c14n-v1"
+    },
+    "node_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "connection_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "node_types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "gas_estimate": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "compiler": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "wasm_target",
+        "wasm_encoder_version",
+        "wasmtime_validation_version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "wasm_target": {
+          "type": "string"
+        },
+        "wasm_encoder_version": {
+          "type": "string"
+        },
+        "wasmtime_validation_version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "graph_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-fA-F0-9]{64}$"
+    },
+    "wasm_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-fA-F0-9]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

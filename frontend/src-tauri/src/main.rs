@@ -2,8 +2,9 @@
 
 use canvas_contracts::{
     Compiler, WasmRuntime, create_client, BaalsClient,
+    artifact::hash::{canonical_graph_hash, hash_bytes_prefixed, GRAPH_CANONICALIZATION},
     nodes::builtin_node_definitions,
-    types::{VisualGraph, CompilationResult},
+    types::VisualGraph,
     error::CanvasResult,
     debugger::DebugSession,
     nodes::NodeRegistry,
@@ -371,25 +372,41 @@ async fn export_audit_bundle(
     let validator = compiler.validator().map_err(|e| e.to_string())?;
     let val_res = validator.validate(&graph).map_err(|e| e.to_string())?;
 
-    let graph_json = serde_json::to_string(&graph).map_err(|e| e.to_string())?;
-    use sha2::{Sha256, Digest};
-    let graph_hash = hex::encode(Sha256::digest(graph_json.as_bytes()));
-    let wasm_hash = hex::encode(Sha256::digest(&result.wasm_bytes));
+    let graph_hash = canonical_graph_hash(&graph).map_err(|e| e.to_string())?;
+    let wasm_hash = hash_bytes_prefixed(&result.wasm_bytes);
+    let mut node_types: Vec<String> = graph.nodes.iter().map(|n| n.node_type.clone()).collect();
+    node_types.sort();
+    node_types.dedup();
 
     let lock_json = serde_json::json!({
-        "schema_version": "canvas.graph.v1",
+        "schema_version": "canvas.graph.lock.v1",
+        "graph_schema_version": graph.schema_version,
         "project_name": graph.name,
         "target_adapter": graph.metadata.get("target_adapter").cloned().unwrap_or_else(|| "baals".to_string()),
+        "graph_canonicalization": GRAPH_CANONICALIZATION,
+        "node_count": graph.nodes.len(),
+        "connection_count": graph.connections.len(),
+        "node_types": node_types,
+        "gas_estimate": result.gas_estimate,
         "compiler": {
+            "name": env!("CARGO_PKG_NAME"),
             "version": canvas_contracts::VERSION,
-            "wasm_target": "wasm32-unknown-unknown"
+            "wasm_target": "wasm32-unknown-unknown",
+            "wasm_encoder_version": "0.38",
+            "wasmtime_validation_version": "43.0.1"
         },
-        "graph_hash": format!("sha256:{}", graph_hash),
-        "wasm_hash": format!("sha256:{}", wasm_hash)
+        "graph_hash": graph_hash,
+        "wasm_hash": wasm_hash
     });
 
     let val_json = serde_json::json!({
         "schema_version": "canvas.validation.v1",
+        "graph_schema_version": graph.schema_version,
+        "graph_hash": canonical_graph_hash(&graph).map_err(|e| e.to_string())?,
+        "graph_canonicalization": GRAPH_CANONICALIZATION,
+        "target_adapter": graph.metadata.get("target_adapter").cloned().unwrap_or_else(|| "baals".to_string()),
+        "node_count": graph.nodes.len(),
+        "connection_count": graph.connections.len(),
         "is_valid": val_res.is_valid,
         "errors": val_res.errors,
         "warnings": val_res.warnings

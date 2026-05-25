@@ -55,6 +55,7 @@ mod manifest_tests {
         node_types.dedup();
         let lock_json = serde_json::json!({
             "schema_version": "canvas.graph.lock.v1",
+            "graph_schema_version": graph.schema_version,
             "project_name": graph.name,
             "target_adapter": target_adapter,
             "graph_canonicalization": GRAPH_CANONICALIZATION,
@@ -82,6 +83,7 @@ mod manifest_tests {
         let val_res = validator.validate(&graph).unwrap();
         let val_json = serde_json::json!({
             "schema_version": "canvas.validation.v1",
+            "graph_schema_version": graph.schema_version,
             "graph_hash": canonical_graph_hash(&graph).unwrap(),
             "graph_canonicalization": GRAPH_CANONICALIZATION,
             "target_adapter": graph.metadata.get("target_adapter").cloned().unwrap_or_else(|| "baals".to_string()),
@@ -107,6 +109,7 @@ mod manifest_tests {
         let lock_content = fs::read_to_string(&lock_output_path).unwrap();
         let parsed_lock: serde_json::Value = serde_json::from_str(&lock_content).unwrap();
         assert_eq!(parsed_lock["schema_version"], "canvas.graph.lock.v1");
+        assert_eq!(parsed_lock["graph_schema_version"], "canvas.graph.v1");
         assert_eq!(parsed_lock["project_name"], "Simple Arithmetic");
         assert_eq!(
             parsed_lock["graph_canonicalization"],
@@ -117,6 +120,7 @@ mod manifest_tests {
         let report_content = fs::read_to_string(&report_output_path).unwrap();
         let parsed_report: serde_json::Value = serde_json::from_str(&report_content).unwrap();
         assert_eq!(parsed_report["schema_version"], "canvas.validation.v1");
+        assert_eq!(parsed_report["graph_schema_version"], "canvas.graph.v1");
         assert!(parsed_report["is_valid"].is_boolean());
         assert!(parsed_report["errors"].is_array());
         assert!(parsed_report["warnings"].is_array());

@@ -10,8 +10,8 @@ use crate::{
     config::Config,
     error::{CanvasError, CanvasResult},
     types::{
-        CompilationResult, ContractABI, FunctionABI, ParameterABI, StateMutability, ValueType,
-        VisualGraph,
+        default_compilation_schema_version, CompilationResult, ContractABI, FunctionABI,
+        ParameterABI, StateMutability, ValueType, VisualGraph,
     },
 };
 
@@ -67,6 +67,7 @@ impl Compiler {
         }
 
         Ok(CompilationResult {
+            schema_version: default_compilation_schema_version(),
             wasm_bytes: wasm_result.wasm_bytes,
             abi,
             gas_estimate,

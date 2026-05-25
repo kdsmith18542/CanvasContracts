@@ -19,6 +19,7 @@ export interface VisualEdge {
 }
 
 export interface VisualGraph {
+    schema_version?: string
     id?: string
     name: string
     description?: string
@@ -43,6 +44,7 @@ export interface PortInfo {
 }
 
 export interface CompilationResult {
+    schema_version?: string
     success: boolean
     wasm_size?: number
     wasm_bytes?: string

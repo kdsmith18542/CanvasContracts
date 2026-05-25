@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://canvascontracts.dev/schemas/canvas.validation.v1.json",
+  "title": "Canvas Validation Report v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "graph_schema_version",
+    "graph_hash",
+    "graph_canonicalization",
+    "target_adapter",
+    "node_count",
+    "connection_count",
+    "is_valid",
+    "errors",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "canvas.validation.v1"
+    },
+    "graph_schema_version": {
+      "type": "string",
+      "const": "canvas.graph.v1"
+    },
+    "graph_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-fA-F0-9]{64}$"
+    },
+    "graph_canonicalization": {
+      "type": "string",
+      "const": "canvas-json-c14n-v1"
+    },
+    "target_adapter": {
+      "type": "string",
+      "minLength": 1
+    },
+    "node_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "connection_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "is_valid": {
+      "type": "boolean"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}
