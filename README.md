@@ -1,5 +1,9 @@
 # Canvas Contracts
 
+<p align="center">
+  <img src="canvascontractslogo.png" alt="Canvas Contracts Logo" width="360" />
+</p>
+
 **Paint Your Logic. Deploy Your Future.**
 
 Canvas Contracts is a visual smart contract development platform. Users compose directed graphs of pre-built nodes (arithmetic, conditionals, storage ops, crypto) that compile to WASM bytecode for deployment on BaaLS.

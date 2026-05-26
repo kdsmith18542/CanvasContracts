@@ -18,7 +18,8 @@
         "zustand": "^4.4.0",
         "lucide-react": "^0.263.1",
         "clsx": "^2.0.0",
-        "tailwind-merge": "^1.14.0"
+        "tailwind-merge": "^1.14.0",
+        "react-router-dom": "^6.15.0"
     },
     "devDependencies": {
         "@tauri-apps/cli": "^1.5.0",
